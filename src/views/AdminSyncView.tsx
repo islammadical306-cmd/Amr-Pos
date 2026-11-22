@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircle2, Cloud, Database, Download, ExternalLink, Image, KeyRound, MessageSquare, RefreshCw, Shield, Trash2, Upload, WifiOff } from 'lucide-react';
+import { Archive, CheckCircle2, Cloud, Database, Download, ExternalLink, Image, KeyRound, MessageSquare, RefreshCw, Shield, Trash2, Upload, Volume2, WifiOff } from 'lucide-react';
 import { apiFetch } from '../lib/api';
 import { getPendingQueue } from '../lib/offlineDb';
+import { getCashDrawerConfig, saveCashDrawerConfig, openCashDrawer, requestSerialPort, type CashDrawerConfig, DRAWER_CODES } from '../lib/cashDrawer';
 import type { Lang } from '../i18n';
 import type { AuthUser, OfflineOperation, ShopSettings, SyncLog, UserRole } from '../types';
 import { PWAInstallButton } from '../components/PWAInstallButton';
@@ -42,6 +43,43 @@ export const AdminSyncView: React.FC<AdminSyncViewProps> = ({
   const [geminiSaving, setGeminiSaving] = useState(false);
   const [testingGemini, setTestingGemini] = useState(false);
   const [geminiMsg, setGeminiMsg] = useState('');
+
+  // Cash Drawer Settings State
+  const [drawerConfig, setDrawerConfig] = useState<CashDrawerConfig>(getCashDrawerConfig());
+  const [drawerTesting, setDrawerTesting] = useState(false);
+  const [drawerStatus, setDrawerStatus] = useState<string | null>(null);
+
+  const handleUpdateDrawerConfig = (updated: Partial<CashDrawerConfig>) => {
+    const next = saveCashDrawerConfig(updated);
+    setDrawerConfig(next);
+  };
+
+  const handleTestDrawer = async () => {
+    setDrawerTesting(true);
+    setDrawerStatus(null);
+    try {
+      const res = await openCashDrawer('Admin Settings Test');
+      if (res.success) {
+        setDrawerStatus(lang === 'bn' ? '✓ ক্যাশড্রয়ার কিক সিগন্যাল সফলভাবে পাঠানো হয়েছে!' : '✓ Cash drawer kick pulse sent successfully!');
+      } else {
+        setDrawerStatus(res.error || 'Failed to kick drawer');
+      }
+    } catch (err) {
+      setDrawerStatus((err as Error).message);
+    } finally {
+      setDrawerTesting(false);
+    }
+  };
+
+  const handleConnectSerial = async () => {
+    setDrawerStatus(null);
+    const res = await requestSerialPort();
+    if (res.success) {
+      setDrawerStatus(lang === 'bn' ? '✓ USB/সিরিয়াল পোর্ট সফলভাবে সংযুক্ত হয়েছে!' : '✓ USB / Serial port connected successfully!');
+    } else {
+      setDrawerStatus(res.error || 'Connection failed');
+    }
+  };
 
   useEffect(() => {
     setShopForm(settings);
@@ -500,6 +538,110 @@ export const AdminSyncView: React.FC<AdminSyncViewProps> = ({
               <div className="text-[11px] text-teal-700 dark:text-teal-400 font-medium">{geminiMsg}</div>
             )}
           </form>
+        </div>
+
+        {/* Electronic Cash Drawer Settings */}
+        <div className="space-y-3 pb-4 border-b border-slate-200 dark:border-slate-800">
+          <div className="flex items-center justify-between">
+            <h3 className="font-display font-semibold text-sm flex items-center gap-1.5 text-slate-900 dark:text-white">
+              <Archive className="w-4 h-4 text-teal-700 dark:text-teal-400" />
+              <span>{lang === 'bn' ? 'ইলেকট্রনিক ক্যাশড্রয়ার কনফিগারেশন' : 'Electronic Cash Drawer Settings'}</span>
+            </h3>
+            <span
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold ${
+                drawerConfig.enabled
+                  ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300'
+                  : 'bg-slate-200 dark:bg-slate-800 text-slate-600'
+              }`}
+            >
+              {drawerConfig.enabled ? (lang === 'bn' ? 'সক্রিয়' : 'Enabled') : (lang === 'bn' ? 'নিষ্ক্রিয়' : 'Disabled')}
+            </span>
+          </div>
+
+          <p className="text-slate-500 text-[11px] leading-relaxed">
+            {lang === 'bn'
+              ? 'থার্মাল প্রিন্টারের RJ11/RJ12 পোর্ট বা USB ক্যাশড্রয়ার ট্রিগার বক্সের মাধ্যমে কিক পালস পাঠিয়ে ড্রয়ার ওপেন করুন।'
+              : 'Trigger RJ11/RJ12 printer-driven or USB serial electronic cash drawers automatically.'}
+          </p>
+
+          <div className="space-y-2 pt-1">
+            <label className="flex items-center gap-2 cursor-pointer text-xs">
+              <input
+                type="checkbox"
+                checked={drawerConfig.autoOpenOnCashSale}
+                onChange={(e) => handleUpdateDrawerConfig({ autoOpenOnCashSale: e.target.checked })}
+                className="rounded border-slate-300 text-teal-600"
+              />
+              <span>{lang === 'bn' ? 'ক্যাশ বিক্রয় সম্পন্ন বা এন্টার চাপলে স্বয়ংক্রিয় ওপেন হবে' : 'Auto-kick open on Cash Sale / Enter'}</span>
+            </label>
+
+            <label className="flex items-center gap-2 cursor-pointer text-xs">
+              <input
+                type="checkbox"
+                checked={drawerConfig.soundEnabled}
+                onChange={(e) => handleUpdateDrawerConfig({ soundEnabled: e.target.checked })}
+                className="rounded border-slate-300 text-teal-600"
+              />
+              <span className="flex items-center gap-1">
+                <Volume2 className="w-3 h-3 text-slate-400" />
+                <span>{lang === 'bn' ? 'ক্যাশড্রয়ার রিলিজ অডিও সাউন্ড বাজবে' : 'Play audio chime on drawer kick'}</span>
+              </span>
+            </label>
+          </div>
+
+          <div>
+            <label className="block text-[11px] text-slate-500 mb-1">
+              {lang === 'bn' ? 'ক্যাশড্রয়ার কিক কোড (ESC/POS Pulse Command)' : 'Kick Code (ESC/POS Pulse)'}
+            </label>
+            <select
+              value={drawerConfig.pulseCode}
+              onChange={(e) => handleUpdateDrawerConfig({ pulseCode: e.target.value as any })}
+              className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-2.5 py-1.5 text-xs font-mono"
+            >
+              {(Object.keys(DRAWER_CODES) as Array<keyof typeof DRAWER_CODES>).map((k) => (
+                <option key={k} value={k}>
+                  {DRAWER_CODES[k].name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex gap-2 pt-1">
+            <button
+              type="button"
+              onClick={handleTestDrawer}
+              disabled={drawerTesting}
+              className="flex-1 py-1.5 rounded-lg bg-teal-700 hover:bg-teal-800 text-white font-semibold text-xs transition-colors flex items-center justify-center gap-1.5"
+            >
+              <Archive className="w-3.5 h-3.5" />
+              <span>{drawerTesting ? '...' : lang === 'bn' ? 'ক্যাশড্রয়ার টেস্ট করুন' : 'Test Kick Drawer'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleConnectSerial}
+              className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-medium"
+              title="USB / Web Serial"
+            >
+              {lang === 'bn' ? 'USB কানেক্ট' : 'USB Serial'}
+            </button>
+          </div>
+
+          {drawerStatus && (
+            <div className="text-[11px] font-medium text-teal-700 dark:text-teal-400 bg-teal-50/80 dark:bg-teal-950/40 p-2 rounded-lg border border-teal-200 dark:border-teal-800">
+              {drawerStatus}
+            </div>
+          )}
+
+          <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-[10px] text-slate-500 space-y-1">
+            <div className="font-semibold text-slate-700 dark:text-slate-300">
+              {lang === 'bn' ? 'থার্মাল প্রিন্টার ড্রাইভার অটো-কিক নির্দেশনা:' : 'Thermal Printer Driver Auto-Kick:'}
+            </div>
+            <div>
+              {lang === 'bn'
+                ? 'Windows Control Panel > Devices and Printers > আপনার রিসিট প্রিন্টারে রাইট ক্লিক > Printer Properties > Device Settings এ যান। সেখানে Cash Drawer অপশনে "Open Before Printing" সিলেক্ট করে Apply দিন।'
+                : 'Under Windows Control Panel > Printer Properties > Device Settings, set Cash Drawer to "Open Before Printing" to kick automatically on receipt print.'}
+            </div>
+          </div>
         </div>
 
         <h3 className="font-display font-semibold text-sm flex items-center gap-2">

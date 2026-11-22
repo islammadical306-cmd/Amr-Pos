@@ -179,6 +179,7 @@ export function initDatabase() {
       discount_amount REAL NOT NULL DEFAULT 0,
       vat_amount REAL NOT NULL DEFAULT 0,
       total REAL NOT NULL DEFAULT 0,
+      tendered_amount REAL NOT NULL DEFAULT 0,
       paid_amount REAL NOT NULL DEFAULT 0,
       due_amount REAL NOT NULL DEFAULT 0,
       change_amount REAL NOT NULL DEFAULT 0,
@@ -406,6 +407,12 @@ export function initDatabase() {
   const settingsColNames = new Set(settingsCols.map((c) => c.name));
   if (!settingsColNames.has('logo_url')) {
     db.exec(`ALTER TABLE shop_settings ADD COLUMN logo_url TEXT DEFAULT '';`);
+  }
+
+  const salesCols = db.prepare(`PRAGMA table_info(sales)`).all() as Array<{ name: string }>;
+  const salesColNames = new Set(salesCols.map((c) => c.name));
+  if (!salesColNames.has('tendered_amount')) {
+    db.exec(`ALTER TABLE sales ADD COLUMN tendered_amount REAL NOT NULL DEFAULT 0;`);
   }
 
   // Ensure default Super Admin account exists if users table is empty

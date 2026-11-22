@@ -201,7 +201,7 @@ export const AIScannerView: React.FC<AIScannerViewProps> = ({
       });
       setGeminiConfigured(true);
       setShowKeySetup(false);
-      setKeySuccessMsg(lang === 'bn' ? 'জেমিনি এআই কি সফলভাবে সংরক্ষিত হয়েছে!' : 'Gemini AI Key saved successfully!');
+      setKeySuccessMsg('');
       // If an image was already captured/uploaded, auto retry analysis!
       if (capturedImage) {
         analyzeImage(capturedImage, lastMimeType);
@@ -327,18 +327,17 @@ export const AIScannerView: React.FC<AIScannerViewProps> = ({
               <button
                 type="button"
                 onClick={() => setShowKeySetup((s) => !s)}
-                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium border shrink-0 transition-colors ${
+                title={lang === 'bn' ? 'Google Gemini AI কনফিগারেশন' : 'Google Gemini AI Settings'}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border shrink-0 transition-colors ${
                   geminiConfigured
-                    ? 'border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300'
+                    ? 'border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800'
                     : 'border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300'
                 }`}
               >
-                <KeyRound className="w-3 h-3" />
-                <span>
-                  {geminiConfigured
-                    ? lang === 'bn' ? 'AI কি সক্রিয়' : 'AI Active'
-                    : lang === 'bn' ? 'AI কি দিন' : 'Setup Key'}
-                </span>
+                <KeyRound className="w-3.5 h-3.5" />
+                {!geminiConfigured && (
+                  <span>{lang === 'bn' ? 'AI কী দিন' : 'Setup AI Key'}</span>
+                )}
               </button>
             )}
           </div>
@@ -392,16 +391,12 @@ export const AIScannerView: React.FC<AIScannerViewProps> = ({
                   </button>
                 )}
               </form>
-            </div>
-          )}
-
-          {keySuccessMsg && (
-            <div className="rounded-lg border border-emerald-300 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-950/40 p-2.5 text-xs text-emerald-800 dark:text-emerald-300 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>{keySuccessMsg}</span>
-              </div>
-              <button type="button" onClick={() => setKeySuccessMsg('')} className="text-emerald-700 text-xs font-semibold">✕</button>
+              {keySuccessMsg && (
+                <div className="rounded-lg border border-emerald-300 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-950/40 p-2 text-xs text-emerald-800 dark:text-emerald-300 flex items-center justify-between">
+                  <span>{keySuccessMsg}</span>
+                  <button type="button" onClick={() => setKeySuccessMsg('')} className="text-emerald-700 text-xs font-semibold">✕</button>
+                </div>
+              )}
             </div>
           )}
 

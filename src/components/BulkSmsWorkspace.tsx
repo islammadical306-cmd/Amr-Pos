@@ -110,6 +110,30 @@ function computeClientSmsStats(text: string) {
   return { length, isUnicode: false, parts, perPart: length <= 160 ? 160 : 153 };
 }
 
+const STORAGE_PERMANENT_GW_KEY = 'amarpos_permanent_sms_gateway';
+const STORAGE_SELECTED_GW_KEY = 'amarpos_selected_gateway_id';
+
+interface GwFormState {
+  name: string;
+  provider: SmsProviderType;
+  base_url: string;
+  balance_url: string;
+  http_method: 'POST' | 'GET';
+  payload_format: 'JSON' | 'FORM' | 'QUERY';
+  sender_id: string;
+  api_key: string;
+  api_secret: string;
+  to_param: string;
+  message_param: string;
+  sender_param: string;
+  api_key_param: string;
+  extra_params_json: string;
+  custom_headers_json: string;
+  batch_delay_ms: number;
+  is_default: boolean;
+  active: boolean;
+}
+
 export const BulkSmsWorkspace: React.FC<BulkSmsWorkspaceProps> = ({
   lang,
   isOnline,
@@ -132,25 +156,35 @@ export const BulkSmsWorkspace: React.FC<BulkSmsWorkspaceProps> = ({
 
   // Gateway form state
   const [editingGwId, setEditingGwId] = useState<number | null>(null);
-  const [gwForm, setGwForm] = useState({
-    name: 'BulkSMSBD Primary',
-    provider: 'BULKSMSBD' as SmsProviderType,
-    base_url: 'https://bulksmsbd.net/api/smsapi',
-    balance_url: 'https://bulksmsbd.net/api/getBalanceApi',
-    http_method: 'POST' as 'POST' | 'GET',
-    payload_format: 'FORM' as 'JSON' | 'FORM' | 'QUERY',
-    sender_id: '',
-    api_key: '',
-    api_secret: '',
-    to_param: 'number',
-    message_param: 'message',
-    sender_param: 'senderid',
-    api_key_param: 'api_key',
-    extra_params_json: '{"type":"text"}',
-    custom_headers_json: '{}',
-    batch_delay_ms: 150,
-    is_default: true,
-    active: true,
+  const [gwForm, setGwForm] = useState<GwFormState>(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_PERMANENT_GW_KEY);
+      if (raw) {
+        return JSON.parse(raw);
+      }
+    } catch {
+      // ignore
+    }
+    return {
+      name: 'BulkSMSBD Primary',
+      provider: 'BULKSMSBD',
+      base_url: 'https://bulksmsbd.net/api/smsapi',
+      balance_url: 'https://bulksmsbd.net/api/getBalanceApi',
+      http_method: 'POST',
+      payload_format: 'FORM',
+      sender_id: '',
+      api_key: '',
+      api_secret: '',
+      to_param: 'number',
+      message_param: 'message',
+      sender_param: 'senderid',
+      api_key_param: 'api_key',
+      extra_params_json: '{"type":"text"}',
+      custom_headers_json: '{}',
+      batch_delay_ms: 150,
+      is_default: true,
+      active: true,
+    };
   });
   const [showAdvancedGw, setShowAdvancedGw] = useState(false);
   const [gwBusy, setGwBusy] = useState(false);
@@ -162,7 +196,15 @@ export const BulkSmsWorkspace: React.FC<BulkSmsWorkspaceProps> = ({
 
   // Bulk Campaign state
   const [campaignTitle, setCampaignTitle] = useState('');
-  const [selectedGatewayId, setSelectedGatewayId] = useState<number | ''>('');
+  const [selectedGatewayId, setSelectedGatewayId] = useState<number | ''>(() => {
+    try {
+      const rawId = localStorage.getItem(STORAGE_SELECTED_GW_KEY);
+      if (rawId) return Number(rawId);
+    } catch {
+      // ignore
+    }
+    return '';
+  });
   const [audienceType, setAudienceType] = useState<'ALL_CONSENTED' | 'DUE_CUSTOMERS' | 'SELECTED_CUSTOMERS' | 'CUSTOM_NUMBERS'>('DUE_CUSTOMERS');
   const [minDue, setMinDue] = useState('1');
   const [selectedCustomerIds, setSelectedCustomerIds] = useState<number[]>([]);
@@ -193,12 +235,37 @@ export const BulkSmsWorkspace: React.FC<BulkSmsWorkspaceProps> = ({
         apiFetch<SmsCampaign[]>('/api/sms/campaigns'),
         apiFetch<Array<Record<string, unknown>>>('/api/messages/logs'),
       ]);
+
+      let currentGateways = gws;
+      // Auto-restore permanent SMS gateway if server restarted with empty DB
+      if (currentGateways.length === 0) {
+        try {
+          const raw = localStorage.getItem(STORAGE_PERMANENT_GW_KEY);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed && parsed.name && parsed.base_url) {
+              await apiFetch('/api/sms/gateways', {
+                method: 'POST',
+                body: JSON.stringify({ ...parsed, is_default: true, active: true }),
+              });
+              currentGateways = await apiFetch<SmsGateway[]>('/api/sms/gateways');
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+
       setPresets(pr);
-      setGateways(gws);
+      setGateways(currentGateways);
       setCampaigns(camps);
       setMsgLogs(logs);
-      const def = gws.find((g) => g.active && g.is_default) || gws.find((g) => g.active);
-      if (def && !selectedGatewayId) setSelectedGatewayId(def.id);
+
+      const def = currentGateways.find((g) => g.active && g.is_default) || currentGateways.find((g) => g.active) || null;
+      if (def) {
+        setSelectedGatewayId(def.id);
+        localStorage.setItem(STORAGE_SELECTED_GW_KEY, String(def.id));
+      }
     } catch {
       // ignore offline or unauthorized sub-calls
     }
@@ -279,7 +346,7 @@ export const BulkSmsWorkspace: React.FC<BulkSmsWorkspaceProps> = ({
         });
         setGwBanner({
           ok: true,
-          text: bn ? 'SMS গেটওয়ে সফলভাবে আপডেট হয়েছে।' : 'SMS gateway updated successfully.',
+          text: bn ? 'SMS গেটওয়ে স্থায়ীভাবে সফলভাবে আপডেট হয়েছে।' : 'SMS gateway updated and permanently saved.',
         });
       } else {
         await apiFetch('/api/sms/gateways', {
@@ -288,9 +355,17 @@ export const BulkSmsWorkspace: React.FC<BulkSmsWorkspaceProps> = ({
         });
         setGwBanner({
           ok: true,
-          text: bn ? 'নতুন SMS গেটওয়ে যুক্ত করা হয়েছে।' : 'New SMS gateway added successfully.',
+          text: bn ? 'নতুন SMS গেটওয়ে যুক্ত ও স্থায়ীভাবে সংরক্ষিত হয়েছে।' : 'New SMS gateway added and permanently saved.',
         });
       }
+
+      // Permanently save to localStorage
+      try {
+        localStorage.setItem(STORAGE_PERMANENT_GW_KEY, JSON.stringify(gwForm));
+      } catch {
+        // ignore
+      }
+
       resetGwForm();
       await loadAll();
     } catch (err) {
@@ -946,7 +1021,34 @@ export const BulkSmsWorkspace: React.FC<BulkSmsWorkspaceProps> = ({
 
       {/* TAB 2: SMS GATEWAY SETUP */}
       {subTab === 'gateways' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        <div className="space-y-4">
+          {activeDefaultGw && (
+            <div className="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-xs text-emerald-900 dark:text-emerald-200 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                <div>
+                  <div className="font-bold text-sm flex items-center gap-2">
+                    <span>{bn ? 'SMS গেটওয়ে স্থায়ীভাবে সংরক্ষিত ও সক্রিয় রয়েছে' : 'SMS Gateway is Permanently Configured & Active'}</span>
+                    <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-200/80 dark:bg-emerald-800 text-emerald-900 dark:text-emerald-100 font-mono">DEFAULT</span>
+                  </div>
+                  <div className="text-[11px] text-emerald-700 dark:text-emerald-300 mt-0.5">
+                    {activeDefaultGw.name} ({activeDefaultGw.provider}) · SID: <span className="font-mono font-semibold">{activeDefaultGw.sender_id || 'N/A'}</span> · API Key: <span className="font-mono">✓ সংরক্ষিত ({activeDefaultGw.key_hint || 'Saved'})</span>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => startEditGateway(activeDefaultGw)}
+                  className="px-3.5 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-semibold text-xs transition-colors"
+                >
+                  {bn ? 'তথ্য পরিবর্তন / এডিট করুন' : 'Edit Gateway Settings'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
           {/* Gateway Setup Form */}
           <form
             onSubmit={handleSaveGateway}
@@ -1387,6 +1489,7 @@ export const BulkSmsWorkspace: React.FC<BulkSmsWorkspaceProps> = ({
             )}
           </div>
         </div>
+      </div>
       )}
 
       {/* TAB 3: SINGLE SMS / WHATSAPP / EMAIL */}

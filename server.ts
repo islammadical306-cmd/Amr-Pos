@@ -929,9 +929,10 @@ function createSaleInternal(payload: Record<string, unknown>, userId?: number, i
   const discountAmount = Number(payload.discount_amount || 0);
   const vatAmount = Number(payload.vat_amount || 0);
   const total = Number(payload.total || 0);
-  const paidAmount = Number(payload.paid_amount ?? total);
+  const tenderedAmount = Number(payload.tendered_amount ?? payload.paid_amount ?? total);
+  const changeAmount = Math.max(0, Number((tenderedAmount - total).toFixed(2)));
+  const paidAmount = Math.min(total, tenderedAmount);
   const dueAmount = Math.max(0, Number((total - paidAmount).toFixed(2)));
-  const changeAmount = Math.max(0, Number((paidAmount - total).toFixed(2)));
   const paymentMethod = String(payload.payment_method || (dueAmount > 0 && paidAmount === 0 ? 'CREDIT' : 'CASH'));
 
   const saleRes = db
@@ -939,9 +940,9 @@ function createSaleInternal(payload: Record<string, unknown>, userId?: number, i
       `INSERT INTO sales (
         client_tx_id, invoice_no, customer_id, customer_name, customer_phone, sale_type, status,
         subtotal, discount_type, discount_value, discount_amount, vat_amount, total,
-        paid_amount, due_amount, change_amount, payment_method, payment_breakdown_json,
+        tendered_amount, paid_amount, due_amount, change_amount, payment_method, payment_breakdown_json,
         coupon_code, notes, synced_from_offline, user_id, created_at
-      ) VALUES (?, ?, ?, ?, ?, 'POS', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')))`
+      ) VALUES (?, ?, ?, ?, ?, 'POS', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')))`
     )
     .run(
       clientTxId,
@@ -956,6 +957,7 @@ function createSaleInternal(payload: Record<string, unknown>, userId?: number, i
       discountAmount,
       vatAmount,
       total,
+      tenderedAmount,
       paidAmount,
       dueAmount,
       changeAmount,

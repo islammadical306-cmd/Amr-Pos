@@ -133,6 +133,7 @@ export interface Sale {
   discount_amount: number;
   vat_amount: number;
   total: number;
+  tendered_amount?: number;
   paid_amount: number;
   due_amount: number;
   change_amount: number;

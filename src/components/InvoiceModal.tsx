@@ -122,43 +122,60 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({ sale, settings, onCl
               </tbody>
             </table>
 
-            <div className="space-y-1 text-[11px] border-b border-dashed border-slate-400 pb-2 mb-2">
+            <div className="space-y-1.5 text-[11px] border-b border-dashed border-slate-400 pb-2.5 mb-2.5">
               <div className="flex justify-between">
-                <span>Subtotal</span>
-                <span className="tabular-nums">{formatBDT(sale.subtotal)}</span>
+                <span>Subtotal (উপমোট)</span>
+                <span className="tabular-nums font-mono">{formatBDT(sale.subtotal)}</span>
               </div>
               {sale.discount_amount > 0 && (
-                <div className="flex justify-between">
-                  <span>Discount</span>
-                  <span className="tabular-nums">-{formatBDT(sale.discount_amount)}</span>
+                <div className="flex justify-between text-teal-700">
+                  <span>Discount (ছাড়)</span>
+                  <span className="tabular-nums font-mono">-{formatBDT(sale.discount_amount)}</span>
                 </div>
               )}
               {sale.vat_amount > 0 && (
                 <div className="flex justify-between">
-                  <span>VAT / Tax</span>
-                  <span className="tabular-nums">{formatBDT(sale.vat_amount)}</span>
+                  <span>VAT / Tax (ভ্যাট)</span>
+                  <span className="tabular-nums font-mono">{formatBDT(sale.vat_amount)}</span>
                 </div>
               )}
-              <div className="flex justify-between font-bold text-sm pt-1 border-t border-slate-300">
-                <span>Grand Total</span>
-                <span className="tabular-nums">{formatBDT(sale.total)}</span>
+              <div className="flex justify-between font-bold text-sm pt-1.5 border-t border-slate-300">
+                <span>Grand Total (মোট প্রদেয়)</span>
+                <span className="tabular-nums font-mono">{formatBDT(sale.total)}</span>
               </div>
-              <div className="flex justify-between">
-                <span>Paid</span>
-                <span className="tabular-nums">{formatBDT(sale.paid_amount)}</span>
-              </div>
-              {sale.due_amount > 0 && (
-                <div className="flex justify-between font-semibold">
-                  <span>Balance Due</span>
-                  <span className="tabular-nums">{formatBDT(sale.due_amount)}</span>
-                </div>
-              )}
-              {sale.change_amount > 0 && (
-                <div className="flex justify-between">
-                  <span>Change</span>
-                  <span className="tabular-nums">{formatBDT(sale.change_amount)}</span>
-                </div>
-              )}
+
+              {/* Customer Payment & Change Return */}
+              {(() => {
+                const tendered =
+                  sale.tendered_amount && sale.tendered_amount > 0
+                    ? sale.tendered_amount
+                    : sale.paid_amount + (sale.change_amount || 0);
+                const change = sale.change_amount || 0;
+                return (
+                  <>
+                    <div className="flex justify-between text-slate-700 pt-0.5">
+                      <span>Cash Received (নগদ গ্রহণ)</span>
+                      <span className="tabular-nums font-mono font-semibold">{formatBDT(tendered)}</span>
+                    </div>
+                    {change > 0 && (
+                      <div className="flex justify-between font-bold text-emerald-700 dark:text-emerald-800 bg-emerald-50/80 px-1.5 py-0.5 rounded border border-emerald-200">
+                        <span>Change Return (ফেরত টাকা)</span>
+                        <span className="tabular-nums font-mono text-xs">{formatBDT(change)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span>Net Paid (পরিশোধিত)</span>
+                      <span className="tabular-nums font-mono">{formatBDT(sale.paid_amount)}</span>
+                    </div>
+                    {sale.due_amount > 0 && (
+                      <div className="flex justify-between font-bold text-red-600 bg-red-50/80 px-1.5 py-0.5 rounded border border-red-200">
+                        <span>Balance Due (বকেয়া)</span>
+                        <span className="tabular-nums font-mono">{formatBDT(sale.due_amount)}</span>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
 
             <div className="flex flex-col items-center text-center pt-1 gap-2">
