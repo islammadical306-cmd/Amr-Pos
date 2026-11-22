@@ -359,6 +359,8 @@ export function initDatabase() {
       spreadsheet_id TEXT DEFAULT '',
       spreadsheet_title TEXT DEFAULT '',
       spreadsheet_url TEXT DEFAULT '',
+      connected_email TEXT DEFAULT '',
+      access_token TEXT DEFAULT '',
       auto_sync_enabled INTEGER NOT NULL DEFAULT 0,
       sync_sales INTEGER NOT NULL DEFAULT 1,
       sync_purchases INTEGER NOT NULL DEFAULT 1,
@@ -413,6 +415,15 @@ export function initDatabase() {
   const salesColNames = new Set(salesCols.map((c) => c.name));
   if (!salesColNames.has('tendered_amount')) {
     db.exec(`ALTER TABLE sales ADD COLUMN tendered_amount REAL NOT NULL DEFAULT 0;`);
+  }
+
+  const sheetsCols = db.prepare(`PRAGMA table_info(google_sheets_config)`).all() as Array<{ name: string }>;
+  const sheetsColNames = new Set(sheetsCols.map((c) => c.name));
+  if (!sheetsColNames.has('connected_email')) {
+    db.exec(`ALTER TABLE google_sheets_config ADD COLUMN connected_email TEXT DEFAULT '';`);
+  }
+  if (!sheetsColNames.has('access_token')) {
+    db.exec(`ALTER TABLE google_sheets_config ADD COLUMN access_token TEXT DEFAULT '';`);
   }
 
   // Ensure default Super Admin account exists if users table is empty

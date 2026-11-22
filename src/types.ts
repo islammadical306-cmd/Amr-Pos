@@ -342,6 +342,8 @@ export interface GoogleSheetsConfig {
   spreadsheet_id: string;
   spreadsheet_title: string;
   spreadsheet_url: string;
+  connected_email?: string;
+  access_token?: string;
   auto_sync_enabled: number;
   sync_sales: number;
   sync_purchases: number;

@@ -78,8 +78,8 @@ export const GoogleSheetsPanel: React.FC<GoogleSheetsPanelProps> = ({
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirmState | null>(null);
 
   useEffect(() => {
-    const unsub = subscribeGoogleAuth(({ user, accessToken }) => {
-      setGoogleEmail(user?.email || null);
+    const unsub = subscribeGoogleAuth(({ email, accessToken }) => {
+      if (email) setGoogleEmail(email);
       setGoogleToken(accessToken);
     });
     return unsub;
@@ -91,10 +91,16 @@ export const GoogleSheetsPanel: React.FC<GoogleSheetsPanelProps> = ({
       const res = await apiFetch<{ config: GoogleSheetsConfig; logs: GoogleSheetsSyncLog[] }>('/api/sheets/config');
       setConfig(res.config);
       setLogs(res.logs || []);
+      if (res.config?.connected_email && !googleEmail) {
+        setGoogleEmail(res.config.connected_email);
+      }
+      if (res.config?.access_token && !googleToken) {
+        setGoogleToken(res.config.access_token);
+      }
     } catch {
       // ignore offline or restricted
     }
-  }, [isOnline]);
+  }, [isOnline, googleEmail, googleToken]);
 
   useEffect(() => {
     loadConfig();
@@ -483,7 +489,55 @@ export const GoogleSheetsPanel: React.FC<GoogleSheetsPanelProps> = ({
 
           {/* Google Account Auth Control */}
           <div className="flex flex-col items-end gap-2">
-            {!googleToken ? (
+            {googleToken ? (
+              <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 px-3.5 py-2 rounded-xl text-xs">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <div className="text-left">
+                  <div className="font-semibold text-emerald-900 dark:text-emerald-200">
+                    {googleEmail || (lang === 'bn' ? 'Google একাউন্ট সংযুক্ত' : 'Google Connected')}
+                  </div>
+                  <div className="text-[10px] text-emerald-700 dark:text-emerald-300 font-medium">
+                    ✓ {lang === 'bn' ? 'স্থায়ীভাবে সংযুক্ত ও সক্রিয়' : 'Permanently Connected & Active'}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleGoogleSignOut}
+                  className="ml-2 p-1.5 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-slate-400 hover:text-red-600 transition-colors"
+                  title={lang === 'bn' ? 'Google থেকে লগ আউট' : 'Sign out Google'}
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : googleEmail ? (
+              <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 px-3.5 py-2 rounded-xl text-xs">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                <div className="text-left">
+                  <div className="font-semibold text-amber-900 dark:text-amber-200">
+                    {googleEmail}
+                  </div>
+                  <div className="text-[10px] text-amber-700 dark:text-amber-300">
+                    {lang === 'bn' ? 'সেশন রিনিউ প্রয়োজন' : 'Session renew needed'}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  disabled={!isOnline || busyAction === 'auth'}
+                  onClick={handleGoogleSignIn}
+                  className="ml-2 px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold text-[11px] transition-colors"
+                >
+                  {busyAction === 'auth' ? '...' : lang === 'bn' ? '১-ক্লিকে রিনিউ' : 'Renew'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleGoogleSignOut}
+                  className="p-1 rounded-lg hover:bg-amber-100 dark:hover:bg-amber-900 text-slate-400 hover:text-red-600 transition-colors"
+                  title={lang === 'bn' ? 'বিচ্ছিন্ন করুন' : 'Disconnect'}
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : (
               <button
                 type="button"
                 disabled={!isOnline || busyAction === 'auth'}
@@ -518,26 +572,6 @@ export const GoogleSheetsPanel: React.FC<GoogleSheetsPanelProps> = ({
                   </span>
                 </div>
               </button>
-            ) : (
-              <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 px-3 py-1.5 rounded-lg text-xs">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                <div className="text-left">
-                  <div className="font-semibold text-emerald-800 dark:text-emerald-200">
-                    {googleEmail || (lang === 'bn' ? 'Google সংযুক্ত' : 'Google Connected')}
-                  </div>
-                  <div className="text-[11px] text-emerald-700/80 dark:text-emerald-300/80">
-                    {lang === 'bn' ? 'অস্থায়ী সেশন টোকেন সক্রিয়' : 'In-memory session authorized'}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleGoogleSignOut}
-                  className="ml-2 p-1 rounded hover:bg-emerald-100 dark:hover:bg-emerald-900 text-slate-500 hover:text-red-600"
-                  title={lang === 'bn' ? 'Google থেকে লগ আউট' : 'Sign out Google'}
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                </button>
-              </div>
             )}
           </div>
         </div>

@@ -7,6 +7,8 @@ export interface GoogleSheetsConfigRow {
   spreadsheet_id: string;
   spreadsheet_title: string;
   spreadsheet_url: string;
+  connected_email?: string;
+  access_token?: string;
   auto_sync_enabled: number;
   sync_sales: number;
   sync_purchases: number;
@@ -43,7 +45,18 @@ export function extractSpreadsheetId(input: string): string {
 }
 
 export function validateGoogleAccessToken(token: string | undefined): string {
-  const clean = String(token || '').trim();
+  let clean = String(token || '').trim();
+  if (!clean || !/^[\x21-\x7E]{20,4096}$/.test(clean)) {
+    try {
+      const row = db.prepare(`SELECT access_token FROM google_sheets_config WHERE id = 1`).get() as { access_token?: string } | undefined;
+      if (row?.access_token && /^[\x21-\x7E]{20,4096}$/.test(row.access_token.trim())) {
+        clean = row.access_token.trim();
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   if (!clean || !/^[\x21-\x7E]{20,4096}$/.test(clean)) {
     const err = new Error('Google Sheets authorization token missing or invalid. Please click "Sign in with Google".') as Error & {
       status?: number;
@@ -51,6 +64,14 @@ export function validateGoogleAccessToken(token: string | undefined): string {
     err.status = 401;
     throw err;
   }
+
+  // Update DB cache with latest valid token so background auto-syncs never fail
+  try {
+    db.prepare(`UPDATE google_sheets_config SET access_token = ? WHERE id = 1`).run(clean);
+  } catch {
+    // ignore
+  }
+
   return clean;
 }
 

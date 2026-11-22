@@ -3189,6 +3189,21 @@ app.put('/api/sheets/config', requireAuth, requirePermission('manage_settings'),
   }
 });
 
+app.post('/api/sheets/auth-token', requireAuth, (req: AuthedRequest, res: Response) => {
+  try {
+    const { email, accessToken } = req.body as { email?: string; accessToken?: string };
+    const cleanEmail = String(email || '').trim();
+    const cleanToken = String(accessToken || '').trim();
+    db.prepare(`UPDATE google_sheets_config SET connected_email = ?, access_token = ? WHERE id = 1`).run(
+      cleanEmail,
+      cleanToken
+    );
+    res.json({ ok: true, email: cleanEmail });
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
 app.post('/api/sheets/create', requireAuth, requirePermission('manage_settings'), async (req: AuthedRequest, res: Response) => {
   try {
     const token = validateGoogleAccessToken(req.headers['x-google-access-token'] as string | undefined);
