@@ -98,6 +98,12 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({ sale, settings, onCl
               <span>Mode: {sale.payment_method}</span>
             </div>
 
+            {sale.status === 'RETURNED' && (
+              <div className="text-center font-bold text-[11px] text-amber-800 bg-amber-50 border border-amber-300 py-1 rounded mb-2">
+                রিটার্ন সমন্বিত ইনভয়েস (RETURN ADJUSTED)
+              </div>
+            )}
+
             <table className="w-full text-left border-b border-dashed border-slate-400 mb-2">
               <thead>
                 <tr className="border-b border-slate-300 text-[11px]">
@@ -114,7 +120,12 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({ sale, settings, onCl
                       <div>{it.product_name}</div>
                       <div className="text-[10px] text-slate-500">{it.unit}</div>
                     </td>
-                    <td className="py-1 text-right tabular-nums">{it.quantity}</td>
+                    <td className="py-1 text-right tabular-nums">
+                      <div>{it.quantity}</div>
+                      {it.returned_qty > 0 && (
+                        <div className="text-[9px] text-red-600 font-semibold">(-{it.returned_qty} Ret)</div>
+                      )}
+                    </td>
                     <td className="py-1 text-right tabular-nums">{Number(it.unit_price).toFixed(2)}</td>
                     <td className="py-1 text-right tabular-nums">{Number(it.line_total).toFixed(2)}</td>
                   </tr>

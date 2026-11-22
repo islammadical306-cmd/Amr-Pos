@@ -1528,6 +1528,33 @@ app.put('/api/customers/:id', requireAuth, requirePermission('manage_customers')
   }
 });
 
+app.delete('/api/customers/:id', requireAuth, requirePermission('manage_customers'), (req: AuthedRequest, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    const customer = db.prepare(`SELECT * FROM customers WHERE id = ?`).get(id) as Record<string, unknown> | undefined;
+    if (!customer) {
+      res.status(404).json({ error: 'Customer not found.' });
+      return;
+    }
+
+    const salesCount = (db.prepare(`SELECT COUNT(*) as c FROM sales WHERE customer_id = ?`).get(id) as { c: number }).c;
+    const currentDue = Number(customer.current_due || 0);
+
+    if (salesCount > 0 || currentDue > 0) {
+      res.status(400).json({
+        error: `এই কাস্টমারের পূর্বের ${salesCount}টি বিক্রয় বা বকেয়া রেকর্ড রয়েছে। সরাসরি মুছে ফেলা সম্ভব নয়; ভুল তথ্য থাকলে এডিট/সংশোধন করুন।`
+      });
+      return;
+    }
+
+    db.prepare(`DELETE FROM customers WHERE id = ?`).run(id);
+    logAudit(req.user, 'DELETE_CUSTOMER', 'customers', id, { name: customer.name, phone: customer.phone });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 app.get('/api/customers/:id/ledger', requireAuth, (req: Request, res: Response) => {
   const id = Number(req.params.id);
   const customer = db

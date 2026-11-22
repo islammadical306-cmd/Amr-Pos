@@ -502,7 +502,7 @@ export default function App() {
             </div>
           </header>
 
-          <main className="flex-1 p-5 overflow-y-auto max-w-[1440px] w-full mx-auto">
+          <main className="flex-1 p-4 sm:p-5 overflow-y-auto max-w-[1440px] w-full mx-auto pb-20 lg:pb-6">
             {activeTab === 'dashboard' && <DashboardView lang={lang} onNavigate={(t) => setActiveTab(t as TabId)} />}
             {activeTab === 'pos' && (
               <POSView
@@ -601,6 +601,94 @@ export default function App() {
           </main>
         </div>
       </div>
+
+      {/* Mobile Bottom Navigation Bar (হোম মেনু বার, ড্যাশবোর্ড, পস, এআই ক্যামেরা, কাস্টমার, বাকি ও পেমেন্ট) */}
+      <nav className="no-print lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 px-1 py-1 flex items-center justify-around shadow-lg">
+        {/* 1. হোম মেনু বার (Home / Full Drawer Menu) */}
+        <button
+          type="button"
+          onClick={() => setMobileMenuOpen(true)}
+          className="flex flex-col items-center justify-center flex-1 py-1 text-slate-600 dark:text-slate-400 hover:text-teal-700 dark:hover:text-teal-400 transition-colors"
+        >
+          <Menu className="w-5 h-5 mb-0.5" />
+          <span className="text-[10px] font-medium leading-tight">{lang === 'bn' ? 'হোম মেনু' : 'Menu'}</span>
+        </button>
+
+        {/* 2. ড্যাশবোর্ড (Dashboard) */}
+        <button
+          type="button"
+          onClick={() => setActiveTab('dashboard')}
+          className={`flex flex-col items-center justify-center flex-1 py-1 transition-colors ${
+            activeTab === 'dashboard'
+              ? 'text-teal-700 dark:text-teal-400 font-bold'
+              : 'text-slate-600 dark:text-slate-400 hover:text-teal-700 dark:hover:text-teal-400'
+          }`}
+        >
+          <LayoutDashboard className="w-5 h-5 mb-0.5" />
+          <span className="text-[10px] font-medium leading-tight">{lang === 'bn' ? 'ড্যাশবোর্ড' : 'Dashboard'}</span>
+        </button>
+
+        {/* 3. পস (POS Checkout) */}
+        <button
+          type="button"
+          onClick={() => setActiveTab('pos')}
+          className={`flex flex-col items-center justify-center flex-1 py-1 transition-colors relative ${
+            activeTab === 'pos'
+              ? 'text-teal-700 dark:text-teal-400 font-bold'
+              : 'text-slate-600 dark:text-slate-400 hover:text-teal-700 dark:hover:text-teal-400'
+          }`}
+        >
+          <ShoppingCart className="w-5 h-5 mb-0.5" />
+          <span className="text-[10px] font-medium leading-tight">{lang === 'bn' ? 'পস' : 'POS'}</span>
+          {cart.length > 0 && (
+            <span className="absolute top-0.5 right-2 w-4 h-4 rounded-full bg-teal-600 text-white text-[9px] font-bold flex items-center justify-center">
+              {cart.reduce((s, it) => s + it.quantity, 0)}
+            </span>
+          )}
+        </button>
+
+        {/* 4. এআই ক্যামেরা (AI Camera Scanner) */}
+        <button
+          type="button"
+          onClick={() => setActiveTab('aiScanner')}
+          className={`flex flex-col items-center justify-center flex-1 py-1 transition-colors ${
+            activeTab === 'aiScanner'
+              ? 'text-teal-700 dark:text-teal-400 font-bold'
+              : 'text-slate-600 dark:text-slate-400 hover:text-teal-700 dark:hover:text-teal-400'
+          }`}
+        >
+          <Camera className="w-5 h-5 mb-0.5" />
+          <span className="text-[10px] font-medium leading-tight">{lang === 'bn' ? 'এআই ক্যামেরা' : 'AI Scan'}</span>
+        </button>
+
+        {/* 5. কাস্টমার (Customer Directory) */}
+        <button
+          type="button"
+          onClick={() => setActiveTab('customers')}
+          className={`flex flex-col items-center justify-center flex-1 py-1 transition-colors ${
+            activeTab === 'customers'
+              ? 'text-teal-700 dark:text-teal-400 font-bold'
+              : 'text-slate-600 dark:text-slate-400 hover:text-teal-700 dark:hover:text-teal-400'
+          }`}
+        >
+          <Users className="w-5 h-5 mb-0.5" />
+          <span className="text-[10px] font-medium leading-tight">{lang === 'bn' ? 'কাস্টমার' : 'Customer'}</span>
+        </button>
+
+        {/* 6. বাকি ও পেমেন্ট (Dues & Collection) */}
+        <button
+          type="button"
+          onClick={() => setActiveTab('dues')}
+          className={`flex flex-col items-center justify-center flex-1 py-1 transition-colors ${
+            activeTab === 'dues'
+              ? 'text-teal-700 dark:text-teal-400 font-bold'
+              : 'text-slate-600 dark:text-slate-400 hover:text-teal-700 dark:hover:text-teal-400'
+          }`}
+        >
+          <Wallet className="w-5 h-5 mb-0.5" />
+          <span className="text-[10px] font-medium leading-tight">{lang === 'bn' ? 'বাকি ও পেমেন্ট' : 'Dues'}</span>
+        </button>
+      </nav>
 
       {printSale && <InvoiceModal sale={printSale} settings={settings} onClose={() => setPrintSale(null)} />}
     </div>
