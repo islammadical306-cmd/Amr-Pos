@@ -1,9 +1,10 @@
 import 'dotenv/config';
 import express, { type Request, type Response } from 'express';
 import http from 'node:http';
+import fs from 'node:fs';
 import path from 'node:path';
 import type { ViteDevServer } from 'vite';
-import { cleanupBrokenLocalImagePaths, closeDatabase, db, initDatabase } from './server/db.ts';
+import { cleanupBrokenLocalImagePaths, closeDatabase, db, defaultDbDir, initDatabase } from './server/db.ts';
 import {
   type AuthedRequest,
   ROLE_PERMISSIONS,
@@ -14,6 +15,7 @@ import {
   getUserByToken,
   hashPassword,
   logAudit,
+  parseClientDeviceInfo,
   requireAuth,
   requirePermission,
   setSessionCookie,
@@ -199,22 +201,26 @@ app.post('/api/auth/signup', (req: Request, res: Response) => {
     }
 
     const persistSession = rememberMe !== false;
+    const clientIp = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '';
+    const userAgent = req.headers['user-agent'] || '';
+    const clientDevice = parseClientDeviceInfo(userAgent, clientIp);
 
     const result = withTransaction(() => {
       const existing = db.prepare(`SELECT id FROM users WHERE LOWER(TRIM(email)) = ?`).get(cleanEmail) as { id: number } | undefined;
       if (existing) {
-        return { error: 'An account with this email already exists. Please switch to Login.', status: 409 as const };
+        return { error: 'এই ইমেইল দিয়ে ইতিমধ্যে একটি অ্যাকাউন্ট তৈরি করা হয়েছে। অনুগ্রহ করে লগইন করুন।', status: 409 as const };
       }
 
       const count = (db.prepare(`SELECT COUNT(*) as c FROM users`).get() as { c: number }).c;
-      const assignedRole: UserRole = count === 0 ? 'Super Admin' : 'Admin';
+      const isBootstrap = count === 0;
+      const assignedRole: UserRole = isBootstrap ? 'Super Admin' : 'Cashier';
+      const isActive = isBootstrap ? 1 : 0; // If first user, bootstrap is active; others require admin approval from Users & Permissions
       const { hash, salt } = hashPassword(cleanPassword);
       const info = db
-        .prepare(`INSERT INTO users (name, email, role, password_hash, password_salt) VALUES (?, ?, ?, ?, ?)`)
-        .run(cleanName, cleanEmail, assignedRole, hash, salt);
+        .prepare(`INSERT INTO users (name, email, role, password_hash, password_salt, active) VALUES (?, ?, ?, ?, ?, ?)`)
+        .run(cleanName, cleanEmail, assignedRole, hash, salt, isActive);
 
       const userId = Number(info.lastInsertRowid);
-      const token = createSession(userId, persistSession);
       const user = {
         id: userId,
         name: cleanName,
@@ -222,13 +228,37 @@ app.post('/api/auth/signup', (req: Request, res: Response) => {
         role: assignedRole,
         permissions: ROLE_PERMISSIONS[assignedRole],
       };
-      logAudit(user, count === 0 ? 'BOOTSTRAP_ADMIN' : 'SIGNUP_USER', 'users', userId, {
-        email: user.email,
-        role: assignedRole,
-        acceptedPolicy: true,
-        rememberMe: persistSession,
-      });
-      return { token, user, status: 201 as const };
+
+      logAudit(
+        user,
+        isBootstrap ? 'BOOTSTRAP_ADMIN' : 'SIGNUP_USER',
+        'users',
+        userId,
+        {
+          email: user.email,
+          role: assignedRole,
+          active: isActive,
+          requiresApproval: !isBootstrap,
+          os: clientDevice.os,
+          deviceType: clientDevice.deviceType,
+          browser: clientDevice.browser,
+          ip: clientDevice.ip,
+        },
+        clientDevice.ip,
+        `${clientDevice.deviceType} (${clientDevice.os})`,
+        clientDevice.browser
+      );
+
+      if (!isBootstrap) {
+        return {
+          requiresApproval: true,
+          message: 'অ্যাকাউন্ট সফলভাবে তৈরি হয়েছে! সিস্টেমে প্রবেশের জন্য অ্যাডমিন কর্তৃক অনুমোদনের প্রয়োজন। "ইউজার ও পারমিশন" মেনু থেকে অনুমতি পাওয়ার পর লগইন করতে পারবেন।',
+          status: 201 as const
+        };
+      }
+
+      const token = createSession(userId, persistSession);
+      return { token, user, status: 201 as const, requiresApproval: false };
     });
 
     if ('error' in result) {
@@ -236,7 +266,12 @@ app.post('/api/auth/signup', (req: Request, res: Response) => {
       return;
     }
 
-    setSessionCookie(req, res, result.token, persistSession);
+    if (result.requiresApproval) {
+      res.status(201).json({ requiresApproval: true, message: result.message });
+      return;
+    }
+
+    setSessionCookie(req, res, result.token!, persistSession);
     res.status(201).json({ token: result.token, user: result.user });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
@@ -312,6 +347,9 @@ app.post('/api/auth/login', (req: Request, res: Response) => {
     }
 
     const persistSession = rememberMe !== false;
+    const clientIp = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '';
+    const userAgent = req.headers['user-agent'] || '';
+    const clientDevice = parseClientDeviceInfo(userAgent, clientIp);
 
     // Check if users table is empty; if so, create the default admin account
     const userCount = (db.prepare(`SELECT COUNT(*) as c FROM users`).get() as { c: number }).c;
@@ -334,7 +372,7 @@ app.post('/api/auth/login', (req: Request, res: Response) => {
     if (!row && envPasscode && cleanPassword === envPasscode) {
       const { hash, salt } = hashPassword(cleanPassword);
       const info = db
-        .prepare(`INSERT INTO users (name, email, role, password_hash, password_salt) VALUES (?, ?, 'Super Admin', ?, ?)`)
+        .prepare(`INSERT INTO users (name, email, role, password_hash, password_salt, active) VALUES (?, ?, 'Super Admin', ?, ?, 1)`)
         .run('Store Admin', cleanEmail, hash, salt);
       const userId = Number(info.lastInsertRowid);
       const token = createSession(userId, persistSession);
@@ -345,6 +383,23 @@ app.post('/api/auth/login', (req: Request, res: Response) => {
         role: 'Super Admin' as UserRole,
         permissions: ROLE_PERMISSIONS['Super Admin'],
       };
+      logAudit(
+        user,
+        'LOGIN',
+        'users',
+        userId,
+        {
+          envPasscode: true,
+          rememberMe: persistSession,
+          os: clientDevice.os,
+          deviceType: clientDevice.deviceType,
+          browser: clientDevice.browser,
+          ip: clientDevice.ip,
+        },
+        clientDevice.ip,
+        `${clientDevice.deviceType} (${clientDevice.os})`,
+        clientDevice.browser
+      );
       setSessionCookie(req, res, token, persistSession);
       res.json({ token, user });
       return;
@@ -355,8 +410,29 @@ app.post('/api/auth/login', (req: Request, res: Response) => {
       return;
     }
 
+    // Strict Permission Gate: Only active / permitted users can access the system
     if (!row.active) {
-      res.status(401).json({ error: 'আপনার অ্যাকাউন্টটি নিষ্ক্রিয় করা আছে। অনুগ্রহ করে অ্যাডমিনের সাথে যোগাযোগ করুন।' });
+      logAudit(
+        { id: row.id, name: row.name, email: row.email, role: row.role, permissions: [] },
+        'LOGIN_BLOCKED',
+        'users',
+        row.id,
+        {
+          reason: 'User account deactivated / no login permission granted',
+          email: row.email,
+          role: row.role,
+          os: clientDevice.os,
+          deviceType: clientDevice.deviceType,
+          browser: clientDevice.browser,
+          ip: clientDevice.ip,
+        },
+        clientDevice.ip,
+        `${clientDevice.deviceType} (${clientDevice.os})`,
+        clientDevice.browser
+      );
+      res.status(403).json({
+        error: 'আপনার অ্যাকাউন্টে সিস্টেমে প্রবেশের অনুমতি নেই। অ্যাডমিনের সাথে যোগাযোগ করে "ইউজার ও পারমিশন" মেনু থেকে অনুমতি চালু করুন।'
+      });
       return;
     }
 
@@ -377,7 +453,22 @@ app.post('/api/auth/login', (req: Request, res: Response) => {
       role: row.role,
       permissions: ROLE_PERMISSIONS[row.role] || [],
     };
-    logAudit(user, 'LOGIN', 'users', row.id, { rememberMe: persistSession });
+    logAudit(
+      user,
+      'LOGIN',
+      'users',
+      row.id,
+      {
+        rememberMe: persistSession,
+        os: clientDevice.os,
+        deviceType: clientDevice.deviceType,
+        browser: clientDevice.browser,
+        ip: clientDevice.ip,
+      },
+      clientDevice.ip,
+      `${clientDevice.deviceType} (${clientDevice.os})`,
+      clientDevice.browser
+    );
     setSessionCookie(req, res, token, persistSession);
     res.json({ token, user });
   } catch (err) {
@@ -2918,16 +3009,29 @@ app.get('/api/users', requireAuth, requirePermission('manage_users'), (_req: Req
 
 app.post('/api/users', requireAuth, requirePermission('manage_users'), (req: AuthedRequest, res: Response) => {
   try {
-    const { name, email, role, password } = req.body as { name: string; email: string; role: UserRole; password: string };
+    const { name, email, role, password, active } = req.body as {
+      name: string;
+      email: string;
+      role: UserRole;
+      password: string;
+      active?: boolean;
+    };
     if (!name?.trim() || !email?.trim() || !password || password.length < 6) {
       res.status(400).json({ error: 'Name, email, and password (min 6 chars) are required.' });
       return;
     }
+    const cleanEmail = email.trim().toLowerCase();
+    const existing = db.prepare(`SELECT id FROM users WHERE LOWER(TRIM(email)) = ?`).get(cleanEmail);
+    if (existing) {
+      res.status(409).json({ error: 'An account with this email already exists.' });
+      return;
+    }
+    const isActive = active !== false ? 1 : 0;
     const { hash, salt } = hashPassword(password);
     const info = db
-      .prepare(`INSERT INTO users (name, email, role, password_hash, password_salt) VALUES (?, ?, ?, ?, ?)`)
-      .run(name.trim(), email.trim().toLowerCase(), role || 'Cashier', hash, salt);
-    logAudit(req.user, 'CREATE_USER', 'users', Number(info.lastInsertRowid), { email, role });
+      .prepare(`INSERT INTO users (name, email, role, password_hash, password_salt, active) VALUES (?, ?, ?, ?, ?, ?)`)
+      .run(name.trim(), cleanEmail, role || 'Cashier', hash, salt, isActive);
+    logAudit(req.user, 'CREATE_USER', 'users', Number(info.lastInsertRowid), { email: cleanEmail, role, active: isActive });
     res.status(201).json({ id: Number(info.lastInsertRowid) });
   } catch (err) {
     res.status(400).json({ error: (err as Error).message });
@@ -2935,48 +3039,185 @@ app.post('/api/users', requireAuth, requirePermission('manage_users'), (req: Aut
 });
 
 app.patch('/api/users/:id', requireAuth, requirePermission('manage_users'), (req: AuthedRequest, res: Response) => {
-  const id = Number(req.params.id);
-  const { role, active } = req.body as { role?: UserRole; active?: boolean };
-  if (role) db.prepare(`UPDATE users SET role = ? WHERE id = ?`).run(role, id);
-  if (typeof active === 'boolean') db.prepare(`UPDATE users SET active = ? WHERE id = ?`).run(active ? 1 : 0, id);
-  logAudit(req.user, 'UPDATE_USER', 'users', id, { role, active });
-  res.json({ ok: true });
+  try {
+    const id = Number(req.params.id);
+    const { role, active } = req.body as { role?: UserRole; active?: boolean };
+
+    // Prevent deactivating own currently logged in account
+    if (req.user?.id === id && active === false) {
+      res.status(400).json({ error: 'আপনি নিজের অ্যাকাউন্ট নিষ্ক্রিয় করতে পারবেন না।' });
+      return;
+    }
+
+    if (role) {
+      db.prepare(`UPDATE users SET role = ? WHERE id = ?`).run(role, id);
+    }
+    if (typeof active === 'boolean') {
+      db.prepare(`UPDATE users SET active = ? WHERE id = ?`).run(active ? 1 : 0, id);
+      if (!active) {
+        // Immediately revoke all active sessions for this user so they are instantly kicked out
+        db.prepare(`DELETE FROM sessions WHERE user_id = ?`).run(id);
+      }
+    }
+    logAudit(req.user, 'UPDATE_USER', 'users', id, { role, active });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
+app.delete('/api/users/:id', requireAuth, requirePermission('manage_users'), (req: AuthedRequest, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (req.user?.id === id) {
+      res.status(400).json({ error: 'আপনি নিজের লগইন থাকা অ্যাকাউন্ট মুছে ফেলতে পারবেন না।' });
+      return;
+    }
+    const target = db.prepare(`SELECT id, email, role FROM users WHERE id = ?`).get(id) as { id: number; email: string; role: string } | undefined;
+    if (!target) {
+      res.status(404).json({ error: 'ইউজার পাওয়া যায়নি।' });
+      return;
+    }
+    if (target.role === 'Super Admin') {
+      const superAdminCount = (db.prepare(`SELECT COUNT(*) as c FROM users WHERE role = 'Super Admin'`).get() as { c: number }).c;
+      if (superAdminCount <= 1) {
+        res.status(400).json({ error: 'সর্বশেষ Super Admin অ্যাকাউন্ট মুছে ফেলা যাবে না।' });
+        return;
+      }
+    }
+    db.prepare(`DELETE FROM sessions WHERE user_id = ?`).run(id);
+    db.prepare(`DELETE FROM users WHERE id = ?`).run(id);
+    logAudit(req.user, 'DELETE_USER', 'users', id, { email: target.email, role: target.role });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.get('/api/users/login-history', requireAuth, requirePermission('manage_users'), (_req: Request, res: Response) => {
+  try {
+    const rows = db.prepare(`
+      SELECT a.id, a.user_id, a.user_name, a.action, a.entity_id, a.details_json,
+             a.ip_address, a.device_info, a.browser_info, a.created_at,
+             u.email, u.role
+      FROM audit_logs a
+      LEFT JOIN users u ON u.id = a.user_id
+      WHERE a.action IN ('LOGIN', 'LOGIN_BLOCKED', 'SIGNUP_USER', 'BOOTSTRAP_ADMIN')
+      ORDER BY a.id DESC LIMIT 100
+    `).all();
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
 });
 
 app.get('/api/audit-logs', requireAuth, requirePermission('manage_users'), (_req: Request, res: Response) => {
   res.json(db.prepare(`SELECT * FROM audit_logs ORDER BY id DESC LIMIT 200`).all());
 });
 
-app.get('/api/settings', requireAuth, (_req: Request, res: Response) => {
-  res.json(db.prepare(`SELECT * FROM shop_settings WHERE id = 1`).get());
+// Publicly readable so login page, storefront, and invoice modals have store branding even before login
+app.get('/api/settings', (_req: Request, res: Response) => {
+  const row = db.prepare(`SELECT * FROM shop_settings WHERE id = 1`).get();
+  res.json(row || {
+    id: 1,
+    shop_name: 'AmarPOS Smart AI',
+    shop_name_bn: 'আমার পিওএস স্মার্ট এআই',
+    logo_url: '',
+    address: 'Dhaka, Bangladesh',
+    phone: '',
+    email: '',
+    vat_reg_no: '',
+    default_vat_percent: 0,
+    currency: 'BDT',
+    receipt_footer: 'ধন্যবাদ! আবার আসবেন / Thank you for shopping with us!',
+    thermal_width: '80mm',
+    promo_banner_text: '',
+    promo_banner_active: 0,
+  });
 });
 
 app.put('/api/settings', requireAuth, requirePermission('manage_settings'), (req: AuthedRequest, res: Response) => {
-  const s = req.body;
-  db.prepare(
-    `UPDATE shop_settings SET
-      shop_name = ?, shop_name_bn = ?, logo_url = ?, address = ?, phone = ?, email = ?, vat_reg_no = ?,
-      default_vat_percent = ?, receipt_footer = ?, thermal_width = ?, sms_gateway_url = ?,
-      whatsapp_phone_id = ?, promo_banner_text = ?, promo_banner_active = ?
-     WHERE id = 1`
-  ).run(
-    s.shop_name,
-    s.shop_name_bn || '',
-    s.logo_url || '',
-    s.address || '',
-    s.phone || '',
-    s.email || '',
-    s.vat_reg_no || '',
-    Number(s.default_vat_percent || 0),
-    s.receipt_footer || '',
-    s.thermal_width || '80mm',
-    s.sms_gateway_url || '',
-    s.whatsapp_phone_id || '',
-    s.promo_banner_text || '',
-    s.promo_banner_active ? 1 : 0
-  );
-  logAudit(req.user, 'UPDATE_SETTINGS', 'shop_settings', 1, {});
-  res.json({ ok: true });
+  try {
+    const s = req.body as Record<string, unknown>;
+    const shop_name = String(s.shop_name || 'AmarPOS Smart AI').trim();
+    const shop_name_bn = String(s.shop_name_bn || '').trim();
+    const logo_url = String(s.logo_url || '').trim();
+    const address = String(s.address || '').trim();
+    const phone = String(s.phone || '').trim();
+    const email = String(s.email || '').trim();
+    const vat_reg_no = String(s.vat_reg_no || '').trim();
+    const default_vat_percent = Number(s.default_vat_percent || 0);
+    const receipt_footer = String(s.receipt_footer || '').trim();
+    const thermal_width = s.thermal_width === '58mm' ? '58mm' : '80mm';
+    const sms_gateway_url = String(s.sms_gateway_url || '').trim();
+    const whatsapp_phone_id = String(s.whatsapp_phone_id || '').trim();
+    const promo_banner_text = String(s.promo_banner_text || '').trim();
+    const promo_banner_active = s.promo_banner_active ? 1 : 0;
+
+    db.prepare(`
+      INSERT INTO shop_settings (
+        id, shop_name, shop_name_bn, logo_url, address, phone, email, vat_reg_no,
+        default_vat_percent, receipt_footer, thermal_width, sms_gateway_url,
+        whatsapp_phone_id, promo_banner_text, promo_banner_active
+      ) VALUES (
+        1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+      )
+      ON CONFLICT(id) DO UPDATE SET
+        shop_name = excluded.shop_name,
+        shop_name_bn = excluded.shop_name_bn,
+        logo_url = excluded.logo_url,
+        address = excluded.address,
+        phone = excluded.phone,
+        email = excluded.email,
+        vat_reg_no = excluded.vat_reg_no,
+        default_vat_percent = excluded.default_vat_percent,
+        receipt_footer = excluded.receipt_footer,
+        thermal_width = excluded.thermal_width,
+        sms_gateway_url = excluded.sms_gateway_url,
+        whatsapp_phone_id = excluded.whatsapp_phone_id,
+        promo_banner_text = excluded.promo_banner_text,
+        promo_banner_active = excluded.promo_banner_active
+    `).run(
+      shop_name,
+      shop_name_bn,
+      logo_url,
+      address,
+      phone,
+      email,
+      vat_reg_no,
+      default_vat_percent,
+      receipt_footer,
+      thermal_width,
+      sms_gateway_url,
+      whatsapp_phone_id,
+      promo_banner_text,
+      promo_banner_active
+    );
+
+    // Persist backup into internal_keys so it survives restarts
+    const backupJson = JSON.stringify({
+      shop_name, shop_name_bn, logo_url, address, phone, email, vat_reg_no,
+      default_vat_percent, receipt_footer, thermal_width, sms_gateway_url,
+      whatsapp_phone_id, promo_banner_text, promo_banner_active
+    });
+    db.prepare(`
+      INSERT INTO internal_keys (key_name, key_value) VALUES ('saved_shop_settings', ?)
+      ON CONFLICT(key_name) DO UPDATE SET key_value = excluded.key_value, created_at = datetime('now')
+    `).run(backupJson);
+
+    // Also persist backup to disk file if possible
+    try {
+      const backupFilePath = path.resolve(defaultDbDir, 'saved_shop_settings.json');
+      fs.writeFileSync(backupFilePath, backupJson, 'utf-8');
+    } catch {
+      // ignore
+    }
+
+    logAudit(req.user, 'UPDATE_SETTINGS', 'shop_settings', 1, { shop_name });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
 });
 
 app.get('/api/settings/gemini-key', requireAuth, (_req: Request, res: Response) => {

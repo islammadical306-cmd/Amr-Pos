@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
-const defaultDbDir = fs.existsSync('/data') ? '/data' : process.cwd();
+export const defaultDbDir = fs.existsSync('/data') ? '/data' : process.cwd();
 const dbPath = process.env.DB_PATH || path.resolve(defaultDbDir, 'amarpos.db');
 const dbDir = path.dirname(dbPath);
 if (!fs.existsSync(dbDir)) {
@@ -426,6 +426,18 @@ export function initDatabase() {
     db.exec(`ALTER TABLE google_sheets_config ADD COLUMN access_token TEXT DEFAULT '';`);
   }
 
+  const auditCols = db.prepare(`PRAGMA table_info(audit_logs)`).all() as Array<{ name: string }>;
+  const auditColNames = new Set(auditCols.map((c) => c.name));
+  if (!auditColNames.has('ip_address')) {
+    db.exec(`ALTER TABLE audit_logs ADD COLUMN ip_address TEXT DEFAULT '';`);
+  }
+  if (!auditColNames.has('device_info')) {
+    db.exec(`ALTER TABLE audit_logs ADD COLUMN device_info TEXT DEFAULT '';`);
+  }
+  if (!auditColNames.has('browser_info')) {
+    db.exec(`ALTER TABLE audit_logs ADD COLUMN browser_info TEXT DEFAULT '';`);
+  }
+
   // Ensure default Super Admin account exists if users table is empty
   try {
     const userCount = (db.prepare(`SELECT COUNT(*) as c FROM users`).get() as { c: number }).c;
@@ -463,6 +475,64 @@ function seedInitialData() {
   const settingsCount = (db.prepare('SELECT COUNT(*) as c FROM shop_settings').get() as { c: number }).c;
   if (settingsCount === 0) {
     db.prepare(`INSERT INTO shop_settings (id) VALUES (1)`).run();
+  }
+
+  // Restore saved shop profile and settings if previously backed up
+  try {
+    let settingsToRestore: Record<string, unknown> | null = null;
+    const keyRow = db.prepare(`SELECT key_value FROM internal_keys WHERE key_name = 'saved_shop_settings'`).get() as { key_value: string } | undefined;
+    if (keyRow?.key_value) {
+      settingsToRestore = JSON.parse(keyRow.key_value);
+    } else {
+      const backupFilePath = path.resolve(defaultDbDir, 'saved_shop_settings.json');
+      if (fs.existsSync(backupFilePath)) {
+        settingsToRestore = JSON.parse(fs.readFileSync(backupFilePath, 'utf-8'));
+      }
+    }
+
+    if (settingsToRestore && settingsToRestore.shop_name) {
+      db.prepare(`
+        INSERT INTO shop_settings (
+          id, shop_name, shop_name_bn, logo_url, address, phone, email, vat_reg_no,
+          default_vat_percent, receipt_footer, thermal_width, sms_gateway_url,
+          whatsapp_phone_id, promo_banner_text, promo_banner_active
+        ) VALUES (
+          1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        )
+        ON CONFLICT(id) DO UPDATE SET
+          shop_name = excluded.shop_name,
+          shop_name_bn = excluded.shop_name_bn,
+          logo_url = excluded.logo_url,
+          address = excluded.address,
+          phone = excluded.phone,
+          email = excluded.email,
+          vat_reg_no = excluded.vat_reg_no,
+          default_vat_percent = excluded.default_vat_percent,
+          receipt_footer = excluded.receipt_footer,
+          thermal_width = excluded.thermal_width,
+          sms_gateway_url = excluded.sms_gateway_url,
+          whatsapp_phone_id = excluded.whatsapp_phone_id,
+          promo_banner_text = excluded.promo_banner_text,
+          promo_banner_active = excluded.promo_banner_active
+      `).run(
+        String(settingsToRestore.shop_name || 'AmarPOS Smart AI'),
+        String(settingsToRestore.shop_name_bn || ''),
+        String(settingsToRestore.logo_url || ''),
+        String(settingsToRestore.address || ''),
+        String(settingsToRestore.phone || ''),
+        String(settingsToRestore.email || ''),
+        String(settingsToRestore.vat_reg_no || ''),
+        Number(settingsToRestore.default_vat_percent || 0),
+        String(settingsToRestore.receipt_footer || ''),
+        String(settingsToRestore.thermal_width || '80mm'),
+        String(settingsToRestore.sms_gateway_url || ''),
+        String(settingsToRestore.whatsapp_phone_id || ''),
+        String(settingsToRestore.promo_banner_text || ''),
+        settingsToRestore.promo_banner_active ? 1 : 0
+      );
+    }
+  } catch {
+    // ignore
   }
 
   // Ensure default Super Admin account exists

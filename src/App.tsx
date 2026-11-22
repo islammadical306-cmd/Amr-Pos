@@ -82,7 +82,15 @@ export default function App() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
-  const [settings, setSettings] = useState<ShopSettings | null>(null);
+  const [settings, setSettings] = useState<ShopSettings | null>(() => {
+    try {
+      const saved = localStorage.getItem('amarpos_saved_shop_settings');
+      if (saved) return JSON.parse(saved);
+    } catch {
+      // ignore
+    }
+    return null;
+  });
   const [cart, setCart] = useState<CartItem[]>([]);
   const [printSale, setPrintSale] = useState<Sale | null>(null);
 
@@ -90,6 +98,56 @@ export default function App() {
   const [syncState, setSyncState] = useState<'IDLE' | 'SYNCING' | 'DONE' | 'ERROR'>('IDLE');
   const [sheetsAutoReady, setSheetsAutoReady] = useState(false);
   const autoSyncTimerRef = useRef<number | null>(null);
+
+  // Sync settings with document.title and localStorage
+  useEffect(() => {
+    if (settings) {
+      try {
+        localStorage.setItem('amarpos_saved_shop_settings', JSON.stringify(settings));
+      } catch {
+        // ignore
+      }
+    }
+    const title = settings?.shop_name?.trim() || 'AmarPOS Smart AI';
+    document.title = `${title} · Retail & Pharmacy POS`;
+  }, [settings]);
+
+  // Load public store settings on boot (even before login)
+  useEffect(() => {
+    apiFetch<ShopSettings>('/api/settings')
+      .then((s) => {
+        if (s) {
+          const cachedRaw = localStorage.getItem('amarpos_saved_shop_settings');
+          if (cachedRaw) {
+            try {
+              const cached = JSON.parse(cachedRaw) as ShopSettings;
+              if (s.shop_name === 'AmarCare Pharmacy & Retail' && cached.shop_name && cached.shop_name !== 'AmarCare Pharmacy & Retail') {
+                setSettings(cached);
+                return;
+              }
+            } catch {
+              // ignore
+            }
+          }
+          setSettings(s);
+        }
+      })
+      .catch(() => {
+        // offline fallback handled by initial state
+      });
+  }, []);
+
+  // Listen to custom settings update events
+  useEffect(() => {
+    const handleSettingsUpdated = (e: Event) => {
+      const customEvent = e as CustomEvent<ShopSettings>;
+      if (customEvent.detail) {
+        setSettings(customEvent.detail);
+      }
+    };
+    window.addEventListener('amarpos:settings-updated', handleSettingsUpdated);
+    return () => window.removeEventListener('amarpos:settings-updated', handleSettingsUpdated);
+  }, []);
 
   // Toggle .dark class on <html>
   useEffect(() => {
@@ -295,6 +353,7 @@ export default function App() {
       <AuthView
         needsBootstrap={needsBootstrap}
         lang={lang}
+        settings={settings}
         onToggleLang={() => setLang((l) => (l === 'en' ? 'bn' : 'en'))}
         onAuthenticated={(u) => {
           setNeedsBootstrap(false);

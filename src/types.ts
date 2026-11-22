@@ -377,4 +377,19 @@ export interface GoogleSheetPreview {
   previewRows: string[][];
 }
 
+export interface UserLoginAudit {
+  id: number;
+  user_id: number | null;
+  user_name: string;
+  action: 'LOGIN' | 'LOGIN_BLOCKED' | 'SIGNUP_USER' | 'BOOTSTRAP_ADMIN' | string;
+  entity_id: string;
+  details_json: string;
+  ip_address: string;
+  device_info: string;
+  browser_info: string;
+  created_at: string;
+  email?: string;
+  role?: string;
+}
+
 

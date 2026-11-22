@@ -220,22 +220,103 @@ export function requirePermission(permission: Permission) {
   };
 }
 
+export interface ClientDeviceInfo {
+  os: string;
+  deviceType: string;
+  browser: string;
+  ip: string;
+  userAgent: string;
+}
+
+export function parseClientDeviceInfo(userAgentRaw?: string, ipRaw?: string): ClientDeviceInfo {
+  const ua = String(userAgentRaw || '');
+  let os = 'Unknown OS';
+  let deviceType = 'Desktop PC (পিসি)';
+  let browser = 'Unknown Browser';
+
+  // Detect Operating System & Form Factor
+  if (/windows phone/i.test(ua)) {
+    os = 'Windows Phone';
+    deviceType = 'Mobile (মোবাইল)';
+  } else if (/win/i.test(ua)) {
+    if (/nt 10.0/i.test(ua)) os = 'Windows 10/11';
+    else if (/nt 6.3/i.test(ua)) os = 'Windows 8.1';
+    else if (/nt 6.2/i.test(ua)) os = 'Windows 8';
+    else if (/nt 6.1/i.test(ua)) os = 'Windows 7';
+    else os = 'Windows';
+    deviceType = 'Desktop PC (উইন্ডোজ পিসি)';
+  } else if (/android/i.test(ua)) {
+    os = 'Android';
+    deviceType = /mobile/i.test(ua) ? 'Android Mobile (মোবাইল)' : 'Android Tablet (ট্যাবলেট)';
+  } else if (/iphone|ipad|ipod/i.test(ua)) {
+    os = /ipad/i.test(ua) ? 'iPadOS' : 'iOS';
+    deviceType = /ipad/i.test(ua) ? 'iPad (ট্যাবলেট)' : 'iPhone (অ্যাপল মোবাইল)';
+  } else if (/macintosh|mac os x/i.test(ua)) {
+    os = 'macOS';
+    deviceType = 'Mac PC / Laptop (ম্যাক)';
+  } else if (/linux/i.test(ua)) {
+    os = 'Linux';
+    deviceType = 'Linux PC (লিনাক্স)';
+  }
+
+  // Detect Browser
+  if (/edg\//i.test(ua)) {
+    browser = 'Microsoft Edge';
+  } else if (/opr\/|opera/i.test(ua)) {
+    browser = 'Opera';
+  } else if (/chrome|crios/i.test(ua)) {
+    browser = 'Google Chrome';
+  } else if (/firefox|fxios/i.test(ua)) {
+    browser = 'Mozilla Firefox';
+  } else if (/safari/i.test(ua) && !/chrome/i.test(ua)) {
+    browser = 'Apple Safari';
+  }
+
+  // Sanitize IP address
+  let ip = String(ipRaw || '').split(',')[0].trim();
+  if (!ip || ip === '::1' || ip === '::ffff:127.0.0.1') {
+    ip = '127.0.0.1 (Localhost)';
+  }
+
+  return { os, deviceType, browser, ip, userAgent: ua };
+}
+
 export function logAudit(
   user: AuthUser | undefined,
   action: string,
   entityType: string,
   entityId: string | number,
-  details: Record<string, unknown> = {}
+  details: Record<string, unknown> = {},
+  ip_address = '',
+  device_info = '',
+  browser_info = ''
 ) {
-  db.prepare(
-    `INSERT INTO audit_logs (user_id, user_name, action, entity_type, entity_id, details_json)
-     VALUES (?, ?, ?, ?, ?, ?)`
-  ).run(
-    user?.id ?? null,
-    user?.name ?? 'System',
-    action,
-    entityType,
-    String(entityId),
-    JSON.stringify(details)
-  );
+  try {
+    db.prepare(
+      `INSERT INTO audit_logs (user_id, user_name, action, entity_type, entity_id, details_json, ip_address, device_info, browser_info)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      user?.id ?? null,
+      user?.name ?? 'System',
+      action,
+      entityType,
+      String(entityId),
+      JSON.stringify(details),
+      ip_address,
+      device_info,
+      browser_info
+    );
+  } catch {
+    db.prepare(
+      `INSERT INTO audit_logs (user_id, user_name, action, entity_type, entity_id, details_json)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    ).run(
+      user?.id ?? null,
+      user?.name ?? 'System',
+      action,
+      entityType,
+      String(entityId),
+      JSON.stringify({ ...details, ip_address, device_info, browser_info })
+    );
+  }
 }

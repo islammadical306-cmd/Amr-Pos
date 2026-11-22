@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { CheckSquare, Eye, EyeOff, FileCheck2, Lock, ShieldCheck, Store, UserPlus } from 'lucide-react';
 import { apiFetch, setAuthToken } from '../lib/api';
-import type { AuthUser } from '../types';
+import type { AuthUser, ShopSettings } from '../types';
 import type { Lang } from '../i18n';
 
 interface AuthViewProps {
   needsBootstrap: boolean;
   lang: Lang;
+  settings?: ShopSettings | null;
   onToggleLang: () => void;
   onAuthenticated: (user: AuthUser) => void;
   onOpenStorefront: () => void;
@@ -16,6 +17,7 @@ type AuthMode = 'login' | 'signup';
 
 export const AuthView: React.FC<AuthViewProps> = ({
   lang,
+  settings,
   onToggleLang,
   onAuthenticated,
   onOpenStorefront,
@@ -33,16 +35,19 @@ export const AuthView: React.FC<AuthViewProps> = ({
   const [rememberMe, setRememberMe] = useState(true);
 
   const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
   const [loading, setLoading] = useState(false);
 
   const switchMode = (nextMode: AuthMode) => {
     setMode(nextMode);
     setError('');
+    setSuccessMsg('');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSuccessMsg('');
 
     const cleanEmail = email.trim();
     const cleanPassword = password.trim();
@@ -78,12 +83,23 @@ export const AuthView: React.FC<AuthViewProps> = ({
           ? { name: name.trim(), email: cleanEmail, password: cleanPassword, confirmPassword: confirmPassword.trim(), acceptedPolicy, rememberMe }
           : { email: cleanEmail, password: cleanPassword, rememberMe };
 
-      const data = await apiFetch<{ token: string; user: AuthUser }>(endpoint, {
+      const data = await apiFetch<{ token?: string; user?: AuthUser; requiresApproval?: boolean; message?: string }>(endpoint, {
         method: 'POST',
         body: JSON.stringify(body),
       });
-      setAuthToken(data.token);
-      onAuthenticated(data.user);
+
+      if (data.requiresApproval) {
+        setSuccessMsg(data.message || (lang === 'bn' ? 'অ্যাকাউন্ট সফলভাবে তৈরি হয়েছে! সিস্টেমে প্রবেশের জন্য অ্যাডমিনের অনুমতি প্রয়োজন।' : 'Account created! Waiting for Admin approval to login.'));
+        setMode('login');
+        setPassword('');
+        setConfirmPassword('');
+        return;
+      }
+
+      if (data.token && data.user) {
+        setAuthToken(data.token);
+        onAuthenticated(data.user);
+      }
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -96,8 +112,11 @@ export const AuthView: React.FC<AuthViewProps> = ({
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col justify-between p-4 sm:p-6">
       <header className="max-w-5xl w-full mx-auto flex items-center justify-between gap-4">
-        <div className="font-display font-bold text-xl tracking-tight text-slate-900 dark:text-white whitespace-nowrap shrink-0">
-          AmarPOS Smart AI
+        <div className="font-display font-bold text-xl tracking-tight text-slate-900 dark:text-white whitespace-nowrap shrink-0 flex items-center gap-2.5">
+          {settings?.logo_url ? (
+            <img src={settings.logo_url} alt="Store Logo" className="w-8 h-8 rounded-lg object-contain bg-white dark:bg-slate-900 p-0.5 border border-slate-200 dark:border-slate-800 shrink-0 shadow-sm" />
+          ) : null}
+          <span>{settings?.shop_name || 'AmarPOS Smart AI'}</span>
         </div>
         <div className="flex items-center gap-3">
           <button
@@ -120,30 +139,33 @@ export const AuthView: React.FC<AuthViewProps> = ({
 
       <main className="max-w-lg w-full mx-auto my-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 sm:p-7 shadow-sm">
         <div className="flex items-center gap-3 mb-5">
-          <div className="w-10 h-10 rounded-lg bg-teal-700/10 text-teal-700 dark:text-teal-400 flex items-center justify-center shrink-0">
-            {isSignup ? <ShieldCheck className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
-          </div>
-          <div>
-            <h1 className="font-display text-lg font-bold text-slate-900 dark:text-white">
-              {isSignup
-                ? lang === 'bn'
-                  ? 'নতুন অ্যাকাউন্ট সাইন আপ / রেজিস্টার'
-                  : 'Create Account / Sign Up'
-                : lang === 'bn'
-                  ? 'অ্যাডমিন ও POS স্টাফ লগইন'
-                  : 'Admin & Staff POS Login'}
+          {settings?.logo_url ? (
+            <img src={settings.logo_url} alt="Shop Logo" className="w-12 h-12 rounded-xl object-contain border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-1 shrink-0 shadow-sm" />
+          ) : (
+            <div className="w-11 h-11 rounded-xl bg-teal-700/10 text-teal-700 dark:text-teal-400 flex items-center justify-center shrink-0 font-bold font-display text-base">
+              {(settings?.shop_name || 'AP').slice(0, 2).toUpperCase()}
+            </div>
+          )}
+          <div className="min-w-0">
+            <h1 className="font-display text-lg font-bold text-slate-900 dark:text-white truncate">
+              {settings?.shop_name || (isSignup
+                ? (lang === 'bn' ? 'নতুন অ্যাকাউন্ট সাইন আপ' : 'Create Account / Sign Up')
+                : (lang === 'bn' ? 'অ্যাডমিন ও POS স্টাফ লগইন' : 'Admin & Staff POS Login'))}
             </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400">
               {isSignup
-                ? lang === 'bn'
-                  ? 'পলিসি মেনে নতুন সুরক্ষিত অ্যাকাউন্ট তৈরি করুন'
-                  : 'Register a secure account under defined store policy'
-                : lang === 'bn'
-                  ? 'আপনার ইমেইল ও পাসওয়ার্ড দিয়ে দ্রুত প্রবেশ করুন'
-                  : 'Sign in quickly with your email and password'}
+                ? (lang === 'bn' ? 'নতুন ইউজার অ্যাকাউন্ট তৈরি করুন' : 'Register a new account')
+                : (lang === 'bn' ? 'সিস্টেমে প্রবেশের জন্য লগইন করুন' : 'Sign in to access POS')}
             </p>
           </div>
         </div>
+
+        {successMsg && (
+          <div className="mb-4 rounded-lg border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 p-3 text-xs text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
+            <FileCheck2 className="w-4 h-4 shrink-0 text-emerald-600" />
+            <span>{successMsg}</span>
+          </div>
+        )}
 
         {/* Default Admin Quick-Fill Banner (Login Mode Only) */}
         {!isSignup && (
@@ -369,7 +391,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
       </main>
 
       <footer className="max-w-5xl w-full mx-auto text-center text-xs text-slate-500 dark:text-slate-400">
-        AmarPOS Smart AI · Offline-First Retail & Pharmacy POS · BDT (৳)
+        {settings?.shop_name || 'AmarPOS Smart AI'} · {settings?.phone ? `${settings.phone} · ` : ''}{lang === 'bn' ? 'অফলাইন ও অনলাইন স্মার্ট পিওএস' : 'Offline-First Retail & Pharmacy POS'} · BDT (৳)
       </footer>
     </div>
   );

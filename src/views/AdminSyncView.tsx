@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Archive, CheckCircle2, Cloud, Database, Download, ExternalLink, Image, KeyRound, MessageSquare, RefreshCw, Shield, Trash2, Upload, Volume2, WifiOff } from 'lucide-react';
+import { Archive, CheckCircle2, Cloud, Database, Download, ExternalLink, Globe, Image, KeyRound, Laptop, MessageSquare, RefreshCw, Shield, Trash2, Upload, UserCheck, UserX, Volume2, WifiOff } from 'lucide-react';
 import { apiFetch } from '../lib/api';
 import { getPendingQueue } from '../lib/offlineDb';
 import { getCashDrawerConfig, saveCashDrawerConfig, openCashDrawer, requestSerialPort, type CashDrawerConfig, DRAWER_CODES } from '../lib/cashDrawer';
 import type { Lang } from '../i18n';
-import type { AuthUser, OfflineOperation, ShopSettings, SyncLog, UserRole } from '../types';
+import type { AuthUser, OfflineOperation, ShopSettings, SyncLog, UserLoginAudit, UserRole } from '../types';
 import { PWAInstallButton } from '../components/PWAInstallButton';
 import { GoogleSheetsPanel } from '../components/GoogleSheetsPanel';
 
@@ -34,7 +34,8 @@ export const AdminSyncView: React.FC<AdminSyncViewProps> = ({
   const [usersList, setUsersList] = useState<Array<Record<string, unknown>>>([]);
   const [rolePerms, setRolePerms] = useState<Record<string, string[]>>({});
   const [auditLogs, setAuditLogs] = useState<Array<Record<string, unknown>>>([]);
-  const [newUser, setNewUser] = useState({ name: '', email: '', role: 'Cashier' as UserRole, password: '' });
+  const [loginAudits, setLoginAudits] = useState<UserLoginAudit[]>([]);
+  const [newUser, setNewUser] = useState({ name: '', email: '', role: 'Cashier' as UserRole, password: '', active: true });
   const [shopForm, setShopForm] = useState<ShopSettings | null>(settings);
   const [statusMsg, setStatusMsg] = useState('');
 
@@ -115,13 +116,15 @@ export const AdminSyncView: React.FC<AdminSyncViewProps> = ({
 
   const loadUsersAudit = async () => {
     try {
-      const [uRes, aRes] = await Promise.all([
+      const [uRes, aRes, hRes] = await Promise.all([
         apiFetch<{ users: Array<Record<string, unknown>>; rolePermissions: Record<string, string[]> }>('/api/users'),
         apiFetch<Array<Record<string, unknown>>>('/api/audit-logs'),
+        apiFetch<UserLoginAudit[]>('/api/users/login-history').catch(() => [] as UserLoginAudit[]),
       ]);
       setUsersList(uRes.users);
       setRolePerms(uRes.rolePermissions);
       setAuditLogs(aRes);
+      setLoginAudits(hRes);
     } catch (err) {
       setStatusMsg((err as Error).message);
     }
@@ -215,88 +218,443 @@ export const AdminSyncView: React.FC<AdminSyncViewProps> = ({
       setStatusMsg('');
       try {
         await apiFetch('/api/users', { method: 'POST', body: JSON.stringify(newUser) });
-        setNewUser({ name: '', email: '', role: 'Cashier', password: '' });
+        setNewUser({ name: '', email: '', role: 'Cashier', password: '', active: true });
         await loadUsersAudit();
+        setStatusMsg(lang === 'bn' ? '✓ নতুন কর্মী অ্যাকাউন্ট সফলভাবে তৈরি হয়েছে!' : '✓ Staff account created successfully!');
       } catch (err) {
         setStatusMsg((err as Error).message);
       }
     };
 
+    const toggleUserActive = async (id: number, currentActive: boolean) => {
+      setStatusMsg('');
+      try {
+        await apiFetch(`/api/users/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ active: !currentActive }),
+        });
+        await loadUsersAudit();
+        setStatusMsg(
+          lang === 'bn'
+            ? (!currentActive ? '✓ ইউজারকে সফলভাবে সিস্টেমে প্রবেশের অনুমতি প্রদান করা হয়েছে।' : '✕ ইউজারের সিস্টেমে প্রবেশের অনুমতি বাতিল করা হয়েছে।')
+            : (!currentActive ? '✓ Login permission granted successfully.' : '✕ Login permission revoked.')
+        );
+      } catch (err) {
+        setStatusMsg((err as Error).message);
+      }
+    };
+
+    const updateUserRole = async (id: number, role: UserRole) => {
+      setStatusMsg('');
+      try {
+        await apiFetch(`/api/users/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ role }),
+        });
+        await loadUsersAudit();
+        setStatusMsg(lang === 'bn' ? '✓ ইউজার রোল সফলভাবে আপডেট হয়েছে।' : '✓ User role updated successfully.');
+      } catch (err) {
+        setStatusMsg((err as Error).message);
+      }
+    };
+
+    const deleteUser = async (id: number, email: string) => {
+      const confirmPrompt = lang === 'bn'
+        ? `আপনি কি নিশ্চিত যে ইউজার "${email}" মুছে ফেলতে চান?`
+        : `Are you sure you want to permanently delete user "${email}"?`;
+      if (!window.confirm(confirmPrompt)) return;
+      setStatusMsg('');
+      try {
+        await apiFetch(`/api/users/${id}`, { method: 'DELETE' });
+        await loadUsersAudit();
+        setStatusMsg(lang === 'bn' ? '✓ ইউজার সফলভাবে মুছে ফেলা হয়েছে।' : '✓ User deleted successfully.');
+      } catch (err) {
+        setStatusMsg((err as Error).message);
+      }
+    };
+
+    const formatAuditDateTime = (dateStr: string) => {
+      try {
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return dateStr;
+        return d.toLocaleString(lang === 'bn' ? 'bn-BD' : 'en-US', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: true,
+        });
+      } catch {
+        return dateStr;
+      }
+    };
+
     return (
       <div className="space-y-6">
-        {statusMsg && <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">{statusMsg}</div>}
+        {statusMsg && (
+          <div className="rounded-xl bg-teal-50 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800 p-3.5 text-xs text-teal-900 dark:text-teal-200 flex items-center justify-between">
+            <span>{statusMsg}</span>
+            <button onClick={() => setStatusMsg('')} className="text-teal-700 hover:opacity-75">✕</button>
+          </div>
+        )}
+
+        {/* Section Notice Banner */}
+        <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm">
+          <div className="space-y-0.5">
+            <h2 className="font-display font-bold text-sm text-slate-900 dark:text-white flex items-center gap-2">
+              <Shield className="w-4 h-4 text-teal-700 dark:text-teal-400" />
+              {lang === 'bn' ? 'ইউজার ও প্রবেশের পারমিশন কন্ট্রোল' : 'Users & Access Permission Control'}
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              {lang === 'bn'
+                ? 'সিস্টেমে প্রবেশের অনুমতি (Login Permission) এখান থেকে নিয়ন্ত্রণ করা হয়। শুধুমাত্র সক্রিয় ও অনুমোদিত ইউজাররাই পাসওয়ার্ড দিয়ে প্রবেশ করতে পারবেন।'
+                : 'Control login access permissions. Only active and approved users can log in to the system.'}
+            </p>
+          </div>
+          <div className="inline-flex items-center gap-2 shrink-0">
+            <span className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300">
+              {lang === 'bn' ? `মোট ইউজার: ${usersList.length} জন` : `Total Users: ${usersList.length}`}
+            </span>
+            <span className="px-2.5 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-950 text-xs font-semibold text-emerald-800 dark:text-emerald-300">
+              {lang === 'bn' ? `অনুমোদিত: ${usersList.filter((u) => u.active).length} জন` : `Permitted: ${usersList.filter((u) => u.active).length}`}
+            </span>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-          <form onSubmit={createUser} className="lg:col-span-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-3 text-xs">
-            <h3 className="font-display font-semibold text-sm flex items-center gap-2"><Shield className="w-4 h-4 text-teal-700" /> Add Staff Account</h3>
-            <input required placeholder="Full Name" value={newUser.name} onChange={(e) => setNewUser({ ...newUser, name: e.target.value })} className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2" />
-            <input required type="email" placeholder="Email" value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2" />
-            <select value={newUser.role} onChange={(e) => setNewUser({ ...newUser, role: e.target.value as UserRole })} className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2">
-              {Object.keys(rolePerms).map((r) => <option key={r} value={r}>{r}</option>)}
-            </select>
-            <input required minLength={6} type="password" placeholder="Password (min 6 chars)" value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2" />
-            <button type="submit" className="w-full py-2 rounded-lg bg-teal-700 text-white font-semibold">Create User</button>
+          {/* Add User Form */}
+          <form onSubmit={createUser} className="lg:col-span-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-3.5 text-xs shadow-sm">
+            <h3 className="font-display font-semibold text-sm flex items-center gap-2 text-slate-900 dark:text-white">
+              <UserCheck className="w-4 h-4 text-teal-700" />
+              {lang === 'bn' ? 'নতুন কর্মী অ্যাকাউন্ট তৈরি করুন' : 'Add Staff Account'}
+            </h3>
+            <div>
+              <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
+                {lang === 'bn' ? 'পূর্ণ নাম' : 'Full Name'}
+              </label>
+              <input
+                required
+                placeholder={lang === 'bn' ? 'যেমন: মোহাম্মদ ইসলাম' : 'e.g. John Doe'}
+                value={newUser.name}
+                onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
+                className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-600"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
+                {lang === 'bn' ? 'ইমেইল অ্যাড্রেস' : 'Email Address'}
+              </label>
+              <input
+                required
+                type="email"
+                placeholder="staff@store.com"
+                value={newUser.email}
+                onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-600"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
+                {lang === 'bn' ? 'পদবী ও রোল (Role)' : 'Role'}
+              </label>
+              <select
+                value={newUser.role}
+                onChange={(e) => setNewUser({ ...newUser, role: e.target.value as UserRole })}
+                className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-600"
+              >
+                {Object.keys(rolePerms).map((r) => (
+                  <option key={r} value={r}>{r}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
+                {lang === 'bn' ? 'পাসওয়ার্ড (কমপক্ষে ৬ অক্ষর)' : 'Password (min 6 chars)'}
+              </label>
+              <input
+                required
+                minLength={6}
+                type="password"
+                placeholder="••••••"
+                value={newUser.password}
+                onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-600"
+              />
+            </div>
+            <label className="flex items-center gap-2 p-2.5 rounded-lg border border-teal-200 dark:border-teal-900/60 bg-teal-50/50 dark:bg-teal-950/30 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={newUser.active}
+                onChange={(e) => setNewUser({ ...newUser, active: e.target.checked })}
+                className="w-4 h-4 rounded text-teal-600 focus:ring-teal-500"
+              />
+              <span className="text-[11px] font-medium text-slate-800 dark:text-slate-200">
+                {lang === 'bn' ? 'তৈরির সাথে সাথে সিস্টেমে প্রবেশের পারমিশন দিন' : 'Grant login permission immediately'}
+              </span>
+            </label>
+            <button
+              type="submit"
+              className="w-full py-2.5 rounded-lg bg-teal-700 hover:bg-teal-800 text-white font-semibold transition-colors"
+            >
+              {lang === 'bn' ? 'কর্মী অ্যাকাউন্ট তৈরি করুন' : 'Create User Account'}
+            </button>
           </form>
 
-          <div className="lg:col-span-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-x-auto">
-            <div className="p-4 border-b border-slate-200 dark:border-slate-800 font-display font-semibold text-sm">POS Users & RBAC Roles</div>
+          {/* User List & Permissions Table */}
+          <div className="lg:col-span-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm">
+            <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+              <div>
+                <h3 className="font-display font-semibold text-sm text-slate-900 dark:text-white">
+                  {lang === 'bn' ? 'সিস্টেম ইউজার ও পারমিশন নিয়ন্ত্রণ' : 'POS Users & Permission Management'}
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  {lang === 'bn'
+                    ? 'অনুমতি বন্ধ করলে সেই ইউজার সিস্টেমে প্রবেশ করতে পারবে না এবং তাৎক্ষণিকভাবে লগ আউট হয়ে যাবে।'
+                    : 'Revoking permission blocks user access and invalidates active sessions immediately.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={loadUsersAudit}
+                className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400"
+                title={lang === 'bn' ? 'রিলোড করুন' : 'Refresh'}
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 dark:bg-slate-950 text-slate-500 border-b border-slate-200 dark:border-slate-800">
+                  <tr>
+                    <th className="py-2.5 px-4 font-medium">{lang === 'bn' ? 'কর্মী / ইউজার' : 'User'}</th>
+                    <th className="py-2.5 px-3 font-medium">{lang === 'bn' ? 'রোল (Role)' : 'Role'}</th>
+                    <th className="py-2.5 px-4 font-medium text-center">{lang === 'bn' ? 'প্রবেশের পারমিশন' : 'Login Permission'}</th>
+                    <th className="py-2.5 px-3 font-medium text-right">{lang === 'bn' ? 'অ্যাকশন' : 'Action'}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {usersList.map((u) => {
+                    const uId = Number(u.id);
+                    const isSelf = uId === user.id;
+                    const isActive = Boolean(u.active);
+                    return (
+                      <tr key={String(u.id)} className="hover:bg-slate-50/50 dark:hover:bg-slate-950/50">
+                        <td className="py-3 px-4">
+                          <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
+                            <span>{String(u.name)}</span>
+                            {isSelf && (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300">
+                                {lang === 'bn' ? 'আপনি' : 'You'}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-slate-500 font-mono">{String(u.email)}</div>
+                        </td>
+                        <td className="py-3 px-3">
+                          <select
+                            disabled={isSelf && u.role === 'Super Admin'}
+                            value={String(u.role)}
+                            onChange={(e) => updateUserRole(uId, e.target.value as UserRole)}
+                            className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-xs font-mono font-medium focus:ring-1 focus:ring-teal-600"
+                          >
+                            {Object.keys(rolePerms).map((r) => (
+                              <option key={r} value={r}>{r}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <div className="flex items-center justify-center gap-2">
+                            <span
+                              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
+                                isActive
+                                  ? 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-900'
+                                  : 'bg-red-100 dark:bg-red-950/70 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-900'
+                              }`}
+                            >
+                              {isActive
+                                ? (lang === 'bn' ? '✓ অনুমোদিত' : '✓ Permitted')
+                                : (lang === 'bn' ? '✕ অনুমতি নেই' : '✕ Blocked')}
+                            </span>
+                            <button
+                              disabled={isSelf}
+                              onClick={() => toggleUserActive(uId, isActive)}
+                              title={isSelf ? (lang === 'bn' ? 'নিজের অ্যাকাউন্ট নিষ্ক্রিয় করা যাবে না' : 'Cannot disable self') : undefined}
+                              className={`px-2 py-1 rounded text-[11px] font-medium transition-colors disabled:opacity-30 ${
+                                isActive
+                                  ? 'border border-red-200 dark:border-red-900 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30'
+                                  : 'bg-teal-700 hover:bg-teal-800 text-white'
+                              }`}
+                            >
+                              {isActive
+                                ? (lang === 'bn' ? 'অনুমতি বাতিল' : 'Revoke')
+                                : (lang === 'bn' ? 'অনুমতি দিন' : 'Grant')}
+                            </button>
+                          </div>
+                        </td>
+                        <td className="py-3 px-3 text-right">
+                          <button
+                            disabled={isSelf}
+                            onClick={() => deleteUser(uId, String(u.email))}
+                            title={isSelf ? (lang === 'bn' ? 'নিজের অ্যাকাউন্ট মোছা যাবে না' : 'Cannot delete self') : (lang === 'bn' ? 'ইউজার মুছুন' : 'Delete user')}
+                            className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-400 hover:text-red-600 hover:border-red-200 dark:hover:border-red-900 disabled:opacity-20"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        {/* Device & PC Login History Audit (User requirement: কে কখন কোন পিসি থেকে ডুকে তার ডিটেইলস) */}
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm">
+          <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 bg-slate-50/50 dark:bg-slate-950/50">
+            <div>
+              <h3 className="font-display font-semibold text-sm text-slate-900 dark:text-white flex items-center gap-2">
+                <Laptop className="w-4 h-4 text-teal-700 dark:text-teal-400" />
+                {lang === 'bn'
+                  ? 'লগইন ডিভাইস ও পিসি অডিট হিস্টোরি (কে কখন কোন পিসি থেকে ঢুকেছে)'
+                  : 'Login Device & PC History Audit'}
+              </h3>
+              <p className="text-[11px] text-slate-500">
+                {lang === 'bn'
+                  ? 'সিস্টেমে প্রবেশের সময়, ব্যবহৃত পিসি/মোবাইল, ব্রাউজার, আইপি অ্যাড্রেস ও প্রবেশের ফলাফল'
+                  : 'Comprehensive record of login attempts, PC/devices, browsers, IP addresses and access outcomes.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={loadUsersAudit}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+            >
+              <RefreshCw className="w-3 h-3" />
+              <span>{lang === 'bn' ? 'রিফ্রেশ অডিট' : 'Refresh Audits'}</span>
+            </button>
+          </div>
+
+          <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50 dark:bg-slate-950 text-slate-500 border-b border-slate-200 dark:border-slate-800">
                 <tr>
-                  <th className="py-2.5 px-4">User</th>
-                  <th className="py-2.5 px-3">Role</th>
-                  <th className="py-2.5 px-4 text-right">Status</th>
+                  <th className="py-2.5 px-4 font-medium">{lang === 'bn' ? 'ইউজার ও রোল' : 'User & Role'}</th>
+                  <th className="py-2.5 px-3 font-medium">{lang === 'bn' ? 'লগইন সময়' : 'Login Time'}</th>
+                  <th className="py-2.5 px-4 font-medium">{lang === 'bn' ? 'ডিভাইস ও পিসি (Device / OS)' : 'Device / OS'}</th>
+                  <th className="py-2.5 px-3 font-medium">{lang === 'bn' ? 'ব্রাউজার' : 'Browser'}</th>
+                  <th className="py-2.5 px-3 font-medium">{lang === 'bn' ? 'আইপি অ্যাড্রেস' : 'IP Address'}</th>
+                  <th className="py-2.5 px-4 font-medium text-right">{lang === 'bn' ? 'ফলাফল / স্ট্যাটাস' : 'Status'}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {usersList.map((u) => (
-                  <tr key={String(u.id)}>
-                    <td className="py-2.5 px-4">
-                      <div className="font-semibold">{String(u.name)}</div>
-                      <div className="text-[11px] text-slate-500">{String(u.email)}</div>
-                    </td>
-                    <td className="py-2.5 px-3 font-mono">{String(u.role)}</td>
-                    <td className="py-2.5 px-4 text-right">
-                      <button
-                        disabled={Number(u.id) === user.id}
-                        onClick={async () => {
-                          await apiFetch(`/api/users/${u.id}`, { method: 'PATCH', body: JSON.stringify({ active: !u.active }) });
-                          loadUsersAudit();
-                        }}
-                        className={`px-2.5 py-1 rounded text-[11px] font-medium ${u.active ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}
-                      >
-                        {u.active ? 'Active' : 'Disabled'}
-                      </button>
+                {loginAudits.map((a) => {
+                  let meta: Record<string, unknown> = {};
+                  try {
+                    meta = JSON.parse(a.details_json || '{}');
+                  } catch {
+                    // ignore
+                  }
+                  const deviceDisplay = a.device_info || String(meta.deviceType || meta.os || 'Desktop PC (পিসি)');
+                  const browserDisplay = a.browser_info || String(meta.browser || 'Web Browser');
+                  const ipDisplay = a.ip_address || String(meta.ip || '127.0.0.1');
+                  const isBlocked = a.action === 'LOGIN_BLOCKED';
+                  const isSignup = a.action === 'SIGNUP_USER';
+                  const isBootstrap = a.action === 'BOOTSTRAP_ADMIN';
+
+                  return (
+                    <tr key={String(a.id)} className={`hover:bg-slate-50/50 dark:hover:bg-slate-950/50 ${isBlocked ? 'bg-red-50/30 dark:bg-red-950/10' : ''}`}>
+                      <td className="py-2.5 px-4">
+                        <div className="font-semibold text-slate-900 dark:text-white">{a.user_name}</div>
+                        <div className="text-[11px] text-slate-500 font-mono">
+                          {a.email ? String(a.email) : (meta.email ? String(meta.email) : `User #${a.user_id || a.entity_id}`)}
+                          {a.role && ` · ${a.role}`}
+                        </div>
+                      </td>
+                      <td className="py-2.5 px-3 font-mono text-[11px] text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                        {formatAuditDateTime(a.created_at)}
+                      </td>
+                      <td className="py-2.5 px-4">
+                        <div className="flex items-center gap-1.5 font-medium text-slate-800 dark:text-slate-200">
+                          <Laptop className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                          <span>{deviceDisplay}</span>
+                        </div>
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
+                          <Globe className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          <span>{browserDisplay}</span>
+                        </div>
+                      </td>
+                      <td className="py-2.5 px-3 font-mono text-[11px] text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                        {ipDisplay}
+                      </td>
+                      <td className="py-2.5 px-4 text-right">
+                        {isBlocked ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300">
+                            {lang === 'bn' ? '✕ অনুমতি ছাড়া চেষ্টা' : '✕ Blocked (No Permission)'}
+                          </span>
+                        ) : isSignup ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                            {lang === 'bn' ? '🆕 নতুন সাইন আপ' : '🆕 Registered'}
+                          </span>
+                        ) : isBootstrap ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300">
+                            {lang === 'bn' ? '👑 বুটস্ট্র্যাপ অ্যাডমিন' : '👑 Bootstrap Admin'}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                            {lang === 'bn' ? '✓ সফল প্রবেশ' : '✓ Access Allowed'}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {loginAudits.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="py-8 text-center text-slate-400 text-xs">
+                      {lang === 'bn' ? 'এখনও কোনো লগইন হিস্টোরি পাওয়া যায়নি।' : 'No login audit events recorded yet.'}
                     </td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
           </div>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-x-auto">
-          <div className="p-4 border-b border-slate-200 dark:border-slate-800 font-display font-semibold text-sm">Security Audit Logs</div>
-          <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 dark:bg-slate-950 text-slate-500 border-b border-slate-200 dark:border-slate-800">
-              <tr>
-                <th className="py-2 px-4">Time</th>
-                <th className="py-2 px-3">User</th>
-                <th className="py-2 px-3">Action</th>
-                <th className="py-2 px-4">Entity</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {auditLogs.slice(0, 30).map((a) => (
-                <tr key={String(a.id)}>
-                  <td className="py-2 px-4 font-mono text-[11px] text-slate-500">{String(a.created_at)}</td>
-                  <td className="py-2 px-3">{String(a.user_name)}</td>
-                  <td className="py-2 px-3 font-mono font-medium">{String(a.action)}</td>
-                  <td className="py-2 px-4 text-slate-500">{String(a.entity_type)} #{String(a.entity_id)}</td>
+        {/* General Audit Logs */}
+        <details className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-sm">
+          <summary className="p-4 cursor-pointer font-display font-semibold text-sm text-slate-700 dark:text-slate-300 hover:text-teal-700 dark:hover:text-teal-400 flex items-center justify-between">
+            <span>{lang === 'bn' ? 'সকল সাধারণ সিস্টেম অডিট লগ (General Audit Logs)' : 'All General System Audit Logs'}</span>
+            <span className="text-xs text-slate-400">({auditLogs.length} events)</span>
+          </summary>
+          <div className="overflow-x-auto border-t border-slate-200 dark:border-slate-800">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 dark:bg-slate-950 text-slate-500 border-b border-slate-200 dark:border-slate-800">
+                <tr>
+                  <th className="py-2 px-4">Time</th>
+                  <th className="py-2 px-3">User</th>
+                  <th className="py-2 px-3">Action</th>
+                  <th className="py-2 px-4">Entity</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {auditLogs.slice(0, 30).map((a) => (
+                  <tr key={String(a.id)}>
+                    <td className="py-2 px-4 font-mono text-[11px] text-slate-500">{String(a.created_at)}</td>
+                    <td className="py-2 px-3">{String(a.user_name)}</td>
+                    <td className="py-2 px-3 font-mono font-medium">{String(a.action)}</td>
+                    <td className="py-2 px-4 text-slate-500">{String(a.entity_type)} #{String(a.entity_id)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
       </div>
     );
   }
@@ -306,8 +664,21 @@ export const AdminSyncView: React.FC<AdminSyncViewProps> = ({
     e.preventDefault();
     if (!shopForm) return;
     try {
+      setStatusMsg('');
+      // 1. Immediately cache in localStorage for instant offline & reload permanence
+      localStorage.setItem('amarpos_saved_shop_settings', JSON.stringify(shopForm));
+
+      // 2. Broadcast event to instantly update App title, sidebar, and all components
+      window.dispatchEvent(new CustomEvent('amarpos:settings-updated', { detail: shopForm }));
+
+      // 3. Persist to server SQLite database & backup
       await apiFetch('/api/settings', { method: 'PUT', body: JSON.stringify(shopForm) });
-      setStatusMsg('Settings saved successfully.');
+
+      setStatusMsg(
+        lang === 'bn'
+          ? '✓ দোকানের পরিচিতি, প্রিন্টার ও লোগো সেটিংস সফলভাবে সংরক্ষিত হয়েছে!'
+          : '✓ Store profile, printer & logo settings saved successfully!'
+      );
       await onRefreshSettings();
     } catch (err) {
       setStatusMsg((err as Error).message);
@@ -407,26 +778,123 @@ export const AdminSyncView: React.FC<AdminSyncViewProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <input value={shopForm.shop_name} onChange={(e) => setShopForm({ ...shopForm, shop_name: e.target.value })} placeholder="Shop Name (EN)" className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2" />
-            <input value={shopForm.shop_name_bn} onChange={(e) => setShopForm({ ...shopForm, shop_name_bn: e.target.value })} placeholder="Shop Name (BN)" className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2" />
-            <input value={shopForm.logo_url || ''} onChange={(e) => setShopForm({ ...shopForm, logo_url: e.target.value })} placeholder={lang === 'bn' ? 'অথবা লোগোর সরাসরি লিঙ্ক (URL) দিন' : 'Or paste direct Logo Image URL'} className="sm:col-span-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2" />
-            <input value={shopForm.phone} onChange={(e) => setShopForm({ ...shopForm, phone: e.target.value })} placeholder="Phone" className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2" />
-            <input value={shopForm.vat_reg_no} onChange={(e) => setShopForm({ ...shopForm, vat_reg_no: e.target.value })} placeholder="BIN / VAT Reg" className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2" />
-            <input value={shopForm.address} onChange={(e) => setShopForm({ ...shopForm, address: e.target.value })} placeholder="Address" className="sm:col-span-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <div>
-              <label className="block text-[11px] text-slate-500 mb-1">Default VAT (%)</label>
-              <input type="number" value={shopForm.default_vat_percent} onChange={(e) => setShopForm({ ...shopForm, default_vat_percent: Number(e.target.value) })} className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2" />
+              <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                {lang === 'bn' ? 'দোকানের নাম / সিস্টেম নাম (ইংরেজিতে) *' : 'Store Profile / System Name (EN) *'}
+              </label>
+              <input
+                required
+                value={shopForm.shop_name}
+                onChange={(e) => setShopForm({ ...shopForm, shop_name: e.target.value })}
+                placeholder="e.g. AmarCare Pharmacy & Retail"
+                className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2 text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-teal-600"
+              />
+              <span className="text-[10px] text-teal-700 dark:text-teal-400">
+                {lang === 'bn' ? '✓ এই নামটি পুরো সিস্টেমে প্রধান নাম হিসেবে প্রদর্শিত হবে' : '✓ This becomes the primary system name everywhere'}
+              </span>
             </div>
             <div>
-              <label className="block text-[11px] text-slate-500 mb-1">Thermal Printer Width</label>
-              <select value={shopForm.thermal_width} onChange={(e) => setShopForm({ ...shopForm, thermal_width: e.target.value as '58mm' | '80mm' })} className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2">
-                <option value="80mm">80mm Thermal Roll</option>
-                <option value="58mm">58mm Thermal Roll</option>
+              <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                {lang === 'bn' ? 'দোকানের নাম (বাংলায়)' : 'Store Name (Bangla)'}
+              </label>
+              <input
+                value={shopForm.shop_name_bn}
+                onChange={(e) => setShopForm({ ...shopForm, shop_name_bn: e.target.value })}
+                placeholder="যেমন: আমারকেয়ার ফার্মেসি ও রিটেইল"
+                className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2 text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-teal-600"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                {lang === 'bn' ? 'অথবা সরাসরি লোগো ইমেজ লিঙ্ক (Image URL)' : 'Or Direct Logo Image URL'}
+              </label>
+              <input
+                value={shopForm.logo_url || ''}
+                onChange={(e) => setShopForm({ ...shopForm, logo_url: e.target.value })}
+                placeholder={lang === 'bn' ? 'https://example.com/my-shop-logo.png' : 'https://example.com/logo.png'}
+                className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2 text-slate-900 dark:text-white font-mono text-xs focus:ring-2 focus:ring-teal-600"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                {lang === 'bn' ? 'মোবাইল / ফোন নম্বর' : 'Phone Number'}
+              </label>
+              <input
+                value={shopForm.phone}
+                onChange={(e) => setShopForm({ ...shopForm, phone: e.target.value })}
+                placeholder="+8801700000000"
+                className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-teal-600"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                {lang === 'bn' ? 'ভ্যাট / BIN নম্বর' : 'VAT / BIN Reg No'}
+              </label>
+              <input
+                value={shopForm.vat_reg_no}
+                onChange={(e) => setShopForm({ ...shopForm, vat_reg_no: e.target.value })}
+                placeholder="BIN-004928172-0101"
+                className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-teal-600"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                {lang === 'bn' ? 'দোকানের ঠিকানা' : 'Store Address'}
+              </label>
+              <input
+                value={shopForm.address}
+                onChange={(e) => setShopForm({ ...shopForm, address: e.target.value })}
+                placeholder="House 24, Road 7, Dhanmondi, Dhaka 1205"
+                className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-teal-600"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                {lang === 'bn' ? 'ডিফল্ট ভ্যাট / ট্যাক্স (%)' : 'Default VAT (%)'}
+              </label>
+              <input
+                type="number"
+                value={shopForm.default_vat_percent}
+                onChange={(e) => setShopForm({ ...shopForm, default_vat_percent: Number(e.target.value) })}
+                className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-teal-600"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                {lang === 'bn' ? 'থার্মাল প্রিন্টার রোলার সাইজ' : 'Thermal Printer Width'}
+              </label>
+              <select
+                value={shopForm.thermal_width}
+                onChange={(e) => setShopForm({ ...shopForm, thermal_width: e.target.value as '58mm' | '80mm' })}
+                className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-teal-600"
+              >
+                <option value="80mm">80mm Thermal POS Roll (৩ ইঞ্চি / স্ট্যান্ডার্ড)</option>
+                <option value="58mm">58mm Thermal POS Roll (২ ইঞ্চি / ছোট রোলার)</option>
               </select>
             </div>
-            <input value={shopForm.promo_banner_text} onChange={(e) => setShopForm({ ...shopForm, promo_banner_text: e.target.value })} placeholder="Storefront Promo Banner" className="sm:col-span-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2" />
-            <input value={shopForm.receipt_footer} onChange={(e) => setShopForm({ ...shopForm, receipt_footer: e.target.value })} placeholder="Invoice Receipt Footer" className="sm:col-span-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2" />
+            <div className="sm:col-span-2">
+              <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                {lang === 'bn' ? 'ই-কমার্স স্টোরফ্রন্ট প্রমো ব্যানার' : 'Online Storefront Promo Banner'}
+              </label>
+              <input
+                value={shopForm.promo_banner_text}
+                onChange={(e) => setShopForm({ ...shopForm, promo_banner_text: e.target.value })}
+                placeholder="10% OFF Healthcare Essentials with code WELCOME10"
+                className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-teal-600"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                {lang === 'bn' ? 'ইনভয়েস ও রসিদের শেষের শুভেচ্ছা বার্তা (Receipt Footer)' : 'Invoice Receipt Footer Note'}
+              </label>
+              <input
+                value={shopForm.receipt_footer}
+                onChange={(e) => setShopForm({ ...shopForm, receipt_footer: e.target.value })}
+                placeholder="ধন্যবাদ! আবার আসবেন / Thank you for shopping with us!"
+                className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-teal-600"
+              />
+            </div>
           </div>
           <button type="submit" className="px-5 py-2 rounded-lg bg-teal-700 text-white font-semibold">
             {lang === 'bn' ? 'সেটিংস সংরক্ষণ করুন' : 'Save Settings'}
