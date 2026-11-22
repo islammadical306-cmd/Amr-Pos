@@ -55,15 +55,62 @@ export interface RecognitionExtraction {
   warnings: string[];
 }
 
-async function callGeminiRestFallback(
+export async function getAvailableGeminiModels(apiKey: string): Promise<{ models: string[]; apiVersion: 'v1beta' | 'v1'; error?: string }> {
+  // 1. Try v1beta
+  try {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`;
+    const res = await fetch(url);
+    const data = (await res.json()) as any;
+    if (res.ok && Array.isArray(data?.models)) {
+      const models = data.models
+        .filter((m: any) => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
+        .map((m: any) => String(m.name).replace(/^models\//, ''));
+      if (models.length > 0) {
+        return { models, apiVersion: 'v1beta' };
+      }
+    } else if (!res.ok) {
+      const msg = data?.error?.message || `HTTP ${res.status}`;
+      // If unauthorized, bad key, or disabled API, return error immediately
+      if (res.status === 400 || res.status === 403) {
+        return { models: [], apiVersion: 'v1beta', error: msg };
+      }
+    }
+  } catch (err) {
+    // continue to v1 fallback
+  }
+
+  // 2. Try v1 fallback
+  try {
+    const url = `https://generativelanguage.googleapis.com/v1/models?key=${encodeURIComponent(apiKey)}`;
+    const res = await fetch(url);
+    const data = (await res.json()) as any;
+    if (res.ok && Array.isArray(data?.models)) {
+      const models = data.models
+        .filter((m: any) => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
+        .map((m: any) => String(m.name).replace(/^models\//, ''));
+      return { models, apiVersion: 'v1' };
+    } else if (!res.ok) {
+      const msg = data?.error?.message || `HTTP ${res.status}`;
+      return { models: [], apiVersion: 'v1', error: msg };
+    }
+  } catch (err) {
+    return { models: [], apiVersion: 'v1', error: (err as Error).message };
+  }
+
+  return { models: [], apiVersion: 'v1beta' };
+}
+
+async function callGeminiRest(
   apiKey: string,
+  apiVersion: 'v1beta' | 'v1',
   model: string,
   imageBase64: string,
   mimeType: string,
   languagePreference: string
 ): Promise<string> {
   const cleanBase64 = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const cleanModel = model.replace(/^models\//, '');
+  const url = `https://generativelanguage.googleapis.com/${apiVersion}/models/${cleanModel}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
   const prompt =
     `Analyze this retail product or medicine packaging image (strips, bottles, boxes, labels, barcodes). ` +
@@ -72,29 +119,34 @@ async function callGeminiRestFallback(
     `{"extractedText": string, "productName": string, "brand": string, "manufacturer": string, "genericName": string, "strength": string, "dosageForm": string, "packageSize": string, "barcode": string, "sku": string, "batchNumber": string, "expiryDate": string, "manufacturingDate": string, "category": string, "confidence": number, "isMedicine": boolean, "warnings": string[]}. ` +
     `Language preference: ${languagePreference === 'bn' ? 'Bangla and English' : 'English'}. Return ONLY raw JSON without markdown formatting.`;
 
+  const bodyPayload: any = {
+    contents: [
+      {
+        parts: [
+          {
+            inlineData: {
+              mimeType: mimeType || 'image/jpeg',
+              data: cleanBase64,
+            },
+          },
+          {
+            text: prompt,
+          },
+        ],
+      },
+    ],
+  };
+
+  if (apiVersion === 'v1beta') {
+    bodyPayload.generationConfig = {
+      responseMimeType: 'application/json',
+    };
+  }
+
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [
-        {
-          parts: [
-            {
-              inlineData: {
-                mimeType: mimeType || 'image/jpeg',
-                data: cleanBase64,
-              },
-            },
-            {
-              text: prompt,
-            },
-          ],
-        },
-      ],
-      generationConfig: {
-        responseMimeType: 'application/json',
-      },
-    }),
+    body: JSON.stringify(bodyPayload),
   });
 
   const data = (await response.json()) as any;
@@ -117,17 +169,50 @@ export async function recognizeProductFromImage(
   languagePreference: 'en' | 'bn' = 'en'
 ) {
   const apiKey = getGeminiApiKey();
+
+  // 1. Query available models dynamically from Google for this exact API Key
+  const modelInfo = await getAvailableGeminiModels(apiKey);
+  if (modelInfo.error) {
+    throw new Error(
+      `Google API Error: ${modelInfo.error}. অনুগ্রহ করে https://aistudio.google.com/app/apikey থেকে নতুন ফ্রেশ API Key তৈরি করুন এবং প্রজেক্টে Generative Language API চালু আছে কিনা নিশ্চিত করুন।`
+    );
+  }
+
+  // 2. Build candidate models prioritizing available ones
+  let candidateModels: string[] = [];
+  if (process.env.GEMINI_MODEL) {
+    candidateModels.push(process.env.GEMINI_MODEL);
+  }
+
+  if (modelInfo.models.length > 0) {
+    // Prefer modern flash models first
+    const preferred = [
+      'gemini-2.0-flash',
+      'gemini-2.5-flash',
+      'gemini-1.5-flash',
+      'gemini-1.5-flash-8b',
+      'gemini-1.5-pro',
+    ];
+    for (const pref of preferred) {
+      if (modelInfo.models.includes(pref) && !candidateModels.includes(pref)) {
+        candidateModels.push(pref);
+      }
+    }
+    // Add any remaining model that supports generateContent
+    for (const m of modelInfo.models) {
+      if (!candidateModels.includes(m)) {
+        candidateModels.push(m);
+      }
+    }
+  }
+
+  // Default fallback if list came empty
+  if (candidateModels.length === 0) {
+    candidateModels = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-flash'];
+  }
+
   const ai = getGeminiClient(apiKey);
-
   const cleanBase64 = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
-
-  const candidateModels = [
-    process.env.GEMINI_MODEL,
-    'gemini-2.0-flash',
-    'gemini-2.5-flash',
-    'gemini-1.5-flash',
-    'gemini-1.5-pro',
-  ].filter(Boolean) as string[];
 
   const contentPayload = {
     parts: [
@@ -186,7 +271,7 @@ export async function recognizeProductFromImage(
 
   for (const model of candidateModels) {
     try {
-      // 1. Try SDK call with v1beta
+      // 1. Try SDK call
       const response = await ai.models.generateContent({
         model,
         contents: contentPayload,
@@ -198,9 +283,9 @@ export async function recognizeProductFromImage(
       }
     } catch (sdkErr) {
       lastErr = sdkErr as Error;
-      // 2. Fallback to direct REST v1beta call
+      // 2. Try direct REST call
       try {
-        const restResult = await callGeminiRestFallback(apiKey, model, imageBase64, mimeType, languagePreference);
+        const restResult = await callGeminiRest(apiKey, modelInfo.apiVersion, model, imageBase64, mimeType, languagePreference);
         if (restResult) {
           rawJsonText = restResult.trim();
           break;

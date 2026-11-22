@@ -19,7 +19,7 @@ import {
   setSessionCookie,
   verifyPassword,
 } from './server/auth.ts';
-import { recognizeProductFromImage } from './server/ai.ts';
+import { recognizeProductFromImage, getAvailableGeminiModels, getGeminiApiKey } from './server/ai.ts';
 import {
   SMS_PROVIDER_PRESETS,
   type SmsGatewayRow,
@@ -3017,6 +3017,25 @@ app.post('/api/settings/gemini-key', requireAuth, requirePermission('manage_sett
     res.json({ success: true, configured: true });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.get('/api/settings/gemini-test', requireAuth, async (_req: Request, res: Response) => {
+  try {
+    const apiKey = getGeminiApiKey();
+    const result = await getAvailableGeminiModels(apiKey);
+    if (result.error) {
+      res.status(400).json({ ok: false, error: result.error });
+      return;
+    }
+    res.json({
+      ok: true,
+      apiVersion: result.apiVersion,
+      modelsCount: result.models.length,
+      availableModels: result.models.slice(0, 10),
+    });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: (err as Error).message });
   }
 });
 

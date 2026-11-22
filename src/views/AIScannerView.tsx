@@ -34,6 +34,7 @@ export const AIScannerView: React.FC<AIScannerViewProps> = ({
   const [geminiConfigured, setGeminiConfigured] = useState<boolean | null>(null);
   const [geminiInputKey, setGeminiInputKey] = useState('');
   const [savingKey, setSavingKey] = useState(false);
+  const [testingKey, setTestingKey] = useState(false);
   const [keySuccessMsg, setKeySuccessMsg] = useState('');
   const [showKeySetup, setShowKeySetup] = useState(false);
 
@@ -212,6 +213,24 @@ export const AIScannerView: React.FC<AIScannerViewProps> = ({
     }
   };
 
+  const handleTestGeminiKey = async () => {
+    setTestingKey(true);
+    setError('');
+    setKeySuccessMsg('');
+    try {
+      const res = await apiFetch<{ ok: boolean; apiVersion: string; modelsCount: number; availableModels: string[] }>('/api/settings/gemini-test');
+      setKeySuccessMsg(
+        lang === 'bn'
+          ? `✓ গুগল এআই সফলভাবে সংযুক্ত! প্রাপ্ত মডেল: ${res.availableModels.slice(0, 3).join(', ')} (${res.apiVersion})`
+          : `✓ Google AI successfully connected! Models: ${res.availableModels.slice(0, 3).join(', ')} (${res.apiVersion})`
+      );
+    } catch (err) {
+      setError(`Google API Error: ${(err as Error).message}`);
+    } finally {
+      setTestingKey(false);
+    }
+  };
+
   const analyzeImage = async (dataUrl: string, mimeType: string) => {
     setError('');
     setAiResult(null);
@@ -362,6 +381,16 @@ export const AIScannerView: React.FC<AIScannerViewProps> = ({
                 >
                   {savingKey ? (lang === 'bn' ? 'সেভ হচ্ছে...' : 'Saving...') : (lang === 'bn' ? 'সংরক্ষণ করুন' : 'Save Key')}
                 </button>
+                {geminiConfigured && (
+                  <button
+                    type="button"
+                    onClick={handleTestGeminiKey}
+                    disabled={testingKey}
+                    className="px-3 py-1.5 rounded-lg border border-teal-300 dark:border-teal-700 hover:bg-teal-50 dark:hover:bg-teal-950 text-teal-700 dark:text-teal-300 font-semibold text-xs transition-colors shrink-0"
+                  >
+                    {testingKey ? (lang === 'bn' ? 'টেস্ট হচ্ছে...' : 'Testing...') : (lang === 'bn' ? 'টেস্ট সংযোগ' : 'Test AI')}
+                  </button>
+                )}
               </form>
             </div>
           )}

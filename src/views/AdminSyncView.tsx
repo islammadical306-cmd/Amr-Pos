@@ -40,6 +40,7 @@ export const AdminSyncView: React.FC<AdminSyncViewProps> = ({
   const [geminiStatus, setGeminiStatus] = useState<{ configured: boolean; source: string; maskedKey: string } | null>(null);
   const [geminiKeyInput, setGeminiKeyInput] = useState('');
   const [geminiSaving, setGeminiSaving] = useState(false);
+  const [testingGemini, setTestingGemini] = useState(false);
   const [geminiMsg, setGeminiMsg] = useState('');
 
   useEffect(() => {
@@ -460,6 +461,31 @@ export const AdminSyncView: React.FC<AdminSyncViewProps> = ({
               >
                 {geminiSaving ? (lang === 'bn' ? 'সংরক্ষণ হচ্ছে...' : 'Saving...') : (lang === 'bn' ? 'কী সেভ করুন' : 'Save Key')}
               </button>
+              {geminiStatus?.configured && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setTestingGemini(true);
+                    setGeminiMsg('');
+                    try {
+                      const res = await apiFetch<{ ok: boolean; apiVersion: string; modelsCount: number; availableModels: string[] }>('/api/settings/gemini-test');
+                      setGeminiMsg(
+                        lang === 'bn'
+                          ? `✓ গুগল এআই সফলভাবে সংযুক্ত! মডেল: ${res.availableModels.slice(0, 3).join(', ')} (${res.apiVersion})`
+                          : `✓ Connected! Models: ${res.availableModels.slice(0, 3).join(', ')} (${res.apiVersion})`
+                      );
+                    } catch (err) {
+                      setGeminiMsg(`Google API Error: ${(err as Error).message}`);
+                    } finally {
+                      setTestingGemini(false);
+                    }
+                  }}
+                  disabled={testingGemini}
+                  className="px-2.5 py-1.5 rounded-lg border border-teal-300 dark:border-teal-700 hover:bg-teal-50 dark:hover:bg-teal-950 text-teal-700 dark:text-teal-300 font-semibold text-[11px] transition-colors"
+                >
+                  {testingGemini ? (lang === 'bn' ? 'টেস্ট...' : 'Testing...') : (lang === 'bn' ? 'টেস্ট সংযোগ' : 'Test AI')}
+                </button>
+              )}
               <a
                 href="https://aistudio.google.com/app/apikey"
                 target="_blank"
