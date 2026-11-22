@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: amarpos-smart-ai
+    env: node
+    plan: starter
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: GEMINI_API_KEY
+        sync: false
+    disk:
+      name: amarpos-data
+      mountPath: /data
+      sizeGB: 1

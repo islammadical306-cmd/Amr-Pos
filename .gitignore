@@ -1,0 +1,14 @@
+node_modules/
+build/
+dist/
+dev-dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+amarpos.db*
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
