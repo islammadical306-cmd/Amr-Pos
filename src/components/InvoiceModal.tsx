@@ -76,6 +76,11 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({ sale, settings, onCl
             className={`w-full ${widthClass} bg-white text-slate-900 p-5 border border-slate-300 font-mono leading-snug`}
           >
             <div className="text-center border-b border-dashed border-slate-400 pb-3 mb-3">
+              {settings?.logo_url && (
+                <div className="flex justify-center mb-2">
+                  <img src={settings.logo_url} alt="Shop Logo" className="max-h-12 max-w-[140px] object-contain" />
+                </div>
+              )}
               <div className="font-bold text-base">{settings?.shop_name || 'AmarCare Pharmacy & Retail'}</div>
               {settings?.shop_name_bn && <div className="text-xs">{settings.shop_name_bn}</div>}
               <div className="text-[11px] text-slate-600 mt-1">{settings?.address}</div>

@@ -285,6 +285,7 @@ export function initDatabase() {
       id INTEGER PRIMARY KEY CHECK(id = 1),
       shop_name TEXT NOT NULL DEFAULT 'AmarCare Pharmacy & Retail',
       shop_name_bn TEXT NOT NULL DEFAULT 'আমারকেয়ার ফার্মেসি ও রিটেইল',
+      logo_url TEXT DEFAULT '',
       address TEXT NOT NULL DEFAULT 'House 24, Road 7, Dhanmondi, Dhaka 1205',
       phone TEXT NOT NULL DEFAULT '+8801711000000',
       email TEXT NOT NULL DEFAULT 'store@amarcare.com',
@@ -397,6 +398,12 @@ export function initDatabase() {
   }
   if (!colNames.has('sms_parts')) {
     db.exec(`ALTER TABLE message_logs ADD COLUMN sms_parts INTEGER NOT NULL DEFAULT 1;`);
+  }
+
+  const settingsCols = db.prepare(`PRAGMA table_info(shop_settings)`).all() as Array<{ name: string }>;
+  const settingsColNames = new Set(settingsCols.map((c) => c.name));
+  if (!settingsColNames.has('logo_url')) {
+    db.exec(`ALTER TABLE shop_settings ADD COLUMN logo_url TEXT DEFAULT '';`);
   }
 
   seedInitialData();

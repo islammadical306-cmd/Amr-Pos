@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Cloud, Database, Download, MessageSquare, RefreshCw, Shield, Upload, WifiOff } from 'lucide-react';
+import { Cloud, Database, Download, Image, MessageSquare, RefreshCw, Shield, Trash2, Upload, WifiOff } from 'lucide-react';
 import { apiFetch } from '../lib/api';
 import { getPendingQueue } from '../lib/offlineDb';
 import type { Lang } from '../i18n';
@@ -283,16 +283,75 @@ export const AdminSyncView: React.FC<AdminSyncViewProps> = ({
     reader.readAsText(file);
   };
 
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      setStatusMsg(lang === 'bn' ? 'লোগোর ফাইলের আকার সর্বোচ্চ ২ মেগাবাইট হতে পারবে।' : 'Logo file size must be under 2MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      if (shopForm) {
+        setShopForm({ ...shopForm, logo_url: result });
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
       {shopForm && (
         <form onSubmit={saveSettings} className="lg:col-span-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-4 text-xs">
-          <h3 className="font-display font-semibold text-sm">Store Profile, Printer & Gateway Settings</h3>
+          <h3 className="font-display font-semibold text-sm">
+            {lang === 'bn' ? 'দোকানের পরিচিতি, প্রিন্টার ও লোগো সেটিংস' : 'Store Profile, Printer & Logo Settings'}
+          </h3>
           {statusMsg && <div className="p-2.5 rounded-lg bg-teal-50 dark:bg-teal-950/30 text-teal-800 dark:text-teal-200">{statusMsg}</div>}
+
+          {/* Logo Upload Section */}
+          <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50 flex flex-col sm:flex-row items-center gap-4">
+            <div className="w-20 h-20 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 flex items-center justify-center overflow-hidden shrink-0">
+              {shopForm.logo_url ? (
+                <img src={shopForm.logo_url} alt="Shop Logo" className="w-full h-full object-contain p-1" />
+              ) : (
+                <Image className="w-8 h-8 text-slate-400" />
+              )}
+            </div>
+            <div className="flex-1 space-y-1.5 text-center sm:text-left">
+              <div className="font-semibold text-slate-800 dark:text-slate-200">
+                {lang === 'bn' ? 'দোকানের লোগো (Shop Logo)' : 'Store Logo'}
+              </div>
+              <p className="text-[11px] text-slate-500">
+                {lang === 'bn'
+                  ? 'এই লোগোটি পিওএস বিল/ইনভয়েস, অনলাইন ই-কমার্স স্টোর এবং সাইডবারে প্রদর্শিত হবে।'
+                  : 'Appears on printed thermal/A4 invoices, storefront header, and sidebar.'}
+              </p>
+              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
+                <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-700 text-white font-medium cursor-pointer hover:bg-teal-800 transition-colors">
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>{lang === 'bn' ? 'ছবি আপলোড করুন' : 'Upload Image'}</span>
+                  <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
+                </label>
+                {shopForm.logo_url && (
+                  <button
+                    type="button"
+                    onClick={() => setShopForm({ ...shopForm, logo_url: '' })}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-red-200 dark:border-red-900 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>{lang === 'bn' ? 'মুছে ফেলুন' : 'Remove'}</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <input value={shopForm.shop_name} onChange={(e) => setShopForm({ ...shopForm, shop_name: e.target.value })} placeholder="Shop Name (EN)" className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2" />
             <input value={shopForm.shop_name_bn} onChange={(e) => setShopForm({ ...shopForm, shop_name_bn: e.target.value })} placeholder="Shop Name (BN)" className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2" />
+            <input value={shopForm.logo_url || ''} onChange={(e) => setShopForm({ ...shopForm, logo_url: e.target.value })} placeholder={lang === 'bn' ? 'অথবা লোগোর সরাসরি লিঙ্ক (URL) দিন' : 'Or paste direct Logo Image URL'} className="sm:col-span-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2" />
             <input value={shopForm.phone} onChange={(e) => setShopForm({ ...shopForm, phone: e.target.value })} placeholder="Phone" className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2" />
             <input value={shopForm.vat_reg_no} onChange={(e) => setShopForm({ ...shopForm, vat_reg_no: e.target.value })} placeholder="BIN / VAT Reg" className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2" />
             <input value={shopForm.address} onChange={(e) => setShopForm({ ...shopForm, address: e.target.value })} placeholder="Address" className="sm:col-span-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2" />
@@ -310,7 +369,9 @@ export const AdminSyncView: React.FC<AdminSyncViewProps> = ({
             <input value={shopForm.promo_banner_text} onChange={(e) => setShopForm({ ...shopForm, promo_banner_text: e.target.value })} placeholder="Storefront Promo Banner" className="sm:col-span-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2" />
             <input value={shopForm.receipt_footer} onChange={(e) => setShopForm({ ...shopForm, receipt_footer: e.target.value })} placeholder="Invoice Receipt Footer" className="sm:col-span-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2" />
           </div>
-          <button type="submit" className="px-5 py-2 rounded-lg bg-teal-700 text-white font-semibold">Save Settings</button>
+          <button type="submit" className="px-5 py-2 rounded-lg bg-teal-700 text-white font-semibold">
+            {lang === 'bn' ? 'সেটিংস সংরক্ষণ করুন' : 'Save Settings'}
+          </button>
         </form>
       )}
 

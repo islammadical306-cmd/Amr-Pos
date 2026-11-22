@@ -340,8 +340,11 @@ export const PublicStorefrontView: React.FC<{ onBackToPOS: () => void }> = ({ on
 
       {/* 3-Zone Top Bar */}
       <header className="max-w-7xl mx-auto px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-8">
-        <a href="#top" className="font-display text-lg font-bold tracking-tight whitespace-nowrap shrink-0">
-          {catalog.settings?.shop_name || 'AmarCare Store'}
+        <a href="#top" className="flex items-center gap-2.5 font-display text-lg font-bold tracking-tight whitespace-nowrap shrink-0">
+          {catalog.settings?.logo_url ? (
+            <img src={catalog.settings.logo_url} alt="Logo" className="h-8 w-auto max-w-[120px] object-contain rounded" />
+          ) : null}
+          <span>{catalog.settings?.shop_name || 'AmarCare Store'}</span>
         </a>
 
         <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600 dark:text-slate-300">

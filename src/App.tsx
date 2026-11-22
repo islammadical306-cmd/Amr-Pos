@@ -337,8 +337,13 @@ export default function App() {
           }`}
         >
           <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-            <div className="font-display font-bold text-base tracking-tight text-slate-900 dark:text-white whitespace-nowrap">
-              AmarPOS Smart AI
+            <div className="flex items-center gap-2.5 min-w-0">
+              {settings?.logo_url ? (
+                <img src={settings.logo_url} alt="Logo" className="w-8 h-8 rounded-lg object-contain bg-slate-50 dark:bg-slate-800 p-0.5 shrink-0" />
+              ) : null}
+              <div className="font-display font-bold text-base tracking-tight text-slate-900 dark:text-white truncate">
+                {settings?.shop_name || 'AmarPOS Smart AI'}
+              </div>
             </div>
             <button onClick={() => setMobileMenuOpen(false)} className="lg:hidden p-1 text-slate-500">
               <X className="w-4 h-4" />

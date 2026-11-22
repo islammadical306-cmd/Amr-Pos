@@ -2523,7 +2523,7 @@ app.post('/api/ai/recognize', requireAuth, async (req: AuthedRequest, res: Respo
 // ==========================================
 
 app.get('/api/store/catalog', (_req: Request, res: Response) => {
-  const settings = db.prepare(`SELECT shop_name, shop_name_bn, address, phone, promo_banner_text, promo_banner_active, default_vat_percent FROM shop_settings WHERE id = 1`).get();
+  const settings = db.prepare(`SELECT shop_name, shop_name_bn, logo_url, address, phone, promo_banner_text, promo_banner_active, default_vat_percent FROM shop_settings WHERE id = 1`).get();
   const categories = db.prepare(`SELECT * FROM categories ORDER BY name ASC`).all();
   const products = db
     .prepare(
@@ -2924,13 +2924,14 @@ app.put('/api/settings', requireAuth, requirePermission('manage_settings'), (req
   const s = req.body;
   db.prepare(
     `UPDATE shop_settings SET
-      shop_name = ?, shop_name_bn = ?, address = ?, phone = ?, email = ?, vat_reg_no = ?,
+      shop_name = ?, shop_name_bn = ?, logo_url = ?, address = ?, phone = ?, email = ?, vat_reg_no = ?,
       default_vat_percent = ?, receipt_footer = ?, thermal_width = ?, sms_gateway_url = ?,
       whatsapp_phone_id = ?, promo_banner_text = ?, promo_banner_active = ?
      WHERE id = 1`
   ).run(
     s.shop_name,
     s.shop_name_bn || '',
+    s.logo_url || '',
     s.address || '',
     s.phone || '',
     s.email || '',
