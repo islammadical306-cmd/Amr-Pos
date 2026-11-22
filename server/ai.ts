@@ -2,9 +2,22 @@ import { GoogleGenAI, Type } from '@google/genai';
 import { db } from './db.ts';
 
 function getGeminiClient() {
-  const apiKey = process.env.GEMINI_API_KEY;
+  let apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
-    throw new Error('GEMINI_API_KEY is not configured in Settings > Secrets.');
+    try {
+      const row = db.prepare(`SELECT key_value FROM internal_keys WHERE key_name = 'gemini_api_key'`).get() as { key_value: string } | undefined;
+      if (row?.key_value?.trim() && row.key_value.trim() !== 'MY_GEMINI_API_KEY') {
+        apiKey = row.key_value.trim();
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
+    throw new Error(
+      'GEMINI_API_KEY কনফিগার করা হয়নি। (Gemini API Key is not configured). দয়া করে POS সেটিংস (Settings) থেকে অথবা Render ড্যাশবোর্ডের Environment-এ GEMINI_API_KEY যোগ করুন।'
+    );
   }
   return new GoogleGenAI({
     apiKey,

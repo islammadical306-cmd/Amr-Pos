@@ -184,15 +184,16 @@ app.post('/api/auth/signup', (req: Request, res: Response) => {
     }
     const cleanName = String(name || '').trim();
     const cleanEmail = String(email || '').trim().toLowerCase();
+    const cleanPassword = String(password || '').trim();
     if (cleanName.length < 2 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
       res.status(400).json({ error: 'Valid full name (min 2 chars) and email address are required.' });
       return;
     }
-    if (!password || password.length < 6) {
+    if (!cleanPassword || cleanPassword.length < 6) {
       res.status(400).json({ error: 'Password must be at least 6 characters long.' });
       return;
     }
-    if (confirmPassword !== undefined && password !== confirmPassword) {
+    if (confirmPassword !== undefined && cleanPassword !== String(confirmPassword).trim()) {
       res.status(400).json({ error: 'Password and confirm password do not match.' });
       return;
     }
@@ -200,14 +201,14 @@ app.post('/api/auth/signup', (req: Request, res: Response) => {
     const persistSession = rememberMe !== false;
 
     const result = withTransaction(() => {
-      const existing = db.prepare(`SELECT id FROM users WHERE email = ?`).get(cleanEmail) as { id: number } | undefined;
+      const existing = db.prepare(`SELECT id FROM users WHERE LOWER(TRIM(email)) = ?`).get(cleanEmail) as { id: number } | undefined;
       if (existing) {
         return { error: 'An account with this email already exists. Please switch to Login.', status: 409 as const };
       }
 
       const count = (db.prepare(`SELECT COUNT(*) as c FROM users`).get() as { c: number }).c;
-      const assignedRole: UserRole = count === 0 ? 'Super Admin' : 'Cashier';
-      const { hash, salt } = hashPassword(password);
+      const assignedRole: UserRole = count === 0 ? 'Super Admin' : 'Admin';
+      const { hash, salt } = hashPassword(cleanPassword);
       const info = db
         .prepare(`INSERT INTO users (name, email, role, password_hash, password_salt) VALUES (?, ?, ?, ?, ?)`)
         .run(cleanName, cleanEmail, assignedRole, hash, salt);
@@ -302,32 +303,45 @@ app.post('/api/auth/login', (req: Request, res: Response) => {
       password?: string;
       rememberMe?: boolean;
     };
-    if (!email?.trim() || !password) {
-      res.status(400).json({ error: 'Email and password are required.' });
+    const cleanEmail = String(email || '').trim().toLowerCase();
+    const cleanPassword = String(password || '').trim();
+
+    if (!cleanEmail || !cleanPassword) {
+      res.status(400).json({ error: 'ইমেইল এবং পাসওয়ার্ড উভয়ই আবশ্যক (Email and password are required).' });
       return;
     }
 
     const persistSession = rememberMe !== false;
 
+    // Check if users table is empty; if so, create the default admin account
+    const userCount = (db.prepare(`SELECT COUNT(*) as c FROM users`).get() as { c: number }).c;
+    if (userCount === 0) {
+      const { hash, salt } = hashPassword('admin123');
+      db.prepare(`
+        INSERT INTO users (name, email, role, password_hash, password_salt, active)
+        VALUES (?, ?, 'Super Admin', ?, ?, 1)
+      `).run('Super Admin', 'admin@amarpos.com', hash, salt);
+    }
+
     // Support ADMIN_PASSCODE override if configured in environment
     const envPasscode = process.env.ADMIN_PASSCODE?.trim();
     const row = db
-      .prepare(`SELECT id, name, email, role, password_hash, password_salt, active FROM users WHERE email = ?`)
-      .get(email.trim().toLowerCase()) as
+      .prepare(`SELECT id, name, email, role, password_hash, password_salt, active FROM users WHERE LOWER(TRIM(email)) = ?`)
+      .get(cleanEmail) as
       | { id: number; name: string; email: string; role: UserRole; password_hash: string; password_salt: string; active: number }
       | undefined;
 
-    if (!row && envPasscode && password === envPasscode) {
-      const { hash, salt } = hashPassword(password);
+    if (!row && envPasscode && cleanPassword === envPasscode) {
+      const { hash, salt } = hashPassword(cleanPassword);
       const info = db
         .prepare(`INSERT INTO users (name, email, role, password_hash, password_salt) VALUES (?, ?, 'Super Admin', ?, ?)`)
-        .run('Store Admin', email.trim().toLowerCase(), hash, salt);
+        .run('Store Admin', cleanEmail, hash, salt);
       const userId = Number(info.lastInsertRowid);
       const token = createSession(userId, persistSession);
       const user = {
         id: userId,
         name: 'Store Admin',
-        email: email.trim().toLowerCase(),
+        email: cleanEmail,
         role: 'Super Admin' as UserRole,
         permissions: ROLE_PERMISSIONS['Super Admin'],
       };
@@ -336,17 +350,22 @@ app.post('/api/auth/login', (req: Request, res: Response) => {
       return;
     }
 
-    if (!row || !row.active) {
-      res.status(401).json({ error: 'Invalid credentials or inactive account.' });
+    if (!row) {
+      res.status(401).json({ error: 'এই ইমেইল দিয়ে কোনো অ্যাকাউন্ট পাওয়া যায়নি। সঠিক ইমেইল দিন অথবা নিচে সাইন আপ করুন।' });
+      return;
+    }
+
+    if (!row.active) {
+      res.status(401).json({ error: 'আপনার অ্যাকাউন্টটি নিষ্ক্রিয় করা আছে। অনুগ্রহ করে অ্যাডমিনের সাথে যোগাযোগ করুন।' });
       return;
     }
 
     const valid =
-      (row.role === 'Super Admin' && envPasscode && password === envPasscode) ||
-      verifyPassword(password, row.password_hash, row.password_salt);
+      (row.role === 'Super Admin' && envPasscode && cleanPassword === envPasscode) ||
+      verifyPassword(cleanPassword, row.password_hash, row.password_salt);
 
     if (!valid) {
-      res.status(401).json({ error: 'Invalid email or password.' });
+      res.status(401).json({ error: 'ভুল পাসওয়ার্ড! অনুগ্রহ করে সঠিক পাসওয়ার্ড দিন।' });
       return;
     }
 
@@ -2946,6 +2965,49 @@ app.put('/api/settings', requireAuth, requirePermission('manage_settings'), (req
   );
   logAudit(req.user, 'UPDATE_SETTINGS', 'shop_settings', 1, {});
   res.json({ ok: true });
+});
+
+app.get('/api/settings/gemini-key', requireAuth, (_req: Request, res: Response) => {
+  const envKey = process.env.GEMINI_API_KEY?.trim();
+  const isEnvConfigured = Boolean(envKey && envKey !== 'MY_GEMINI_API_KEY');
+  let dbKey = '';
+  try {
+    const row = db.prepare(`SELECT key_value FROM internal_keys WHERE key_name = 'gemini_api_key'`).get() as { key_value: string } | undefined;
+    if (row?.key_value?.trim() && row.key_value.trim() !== 'MY_GEMINI_API_KEY') {
+      dbKey = row.key_value.trim();
+    }
+  } catch {
+    // ignore
+  }
+  const isDbConfigured = Boolean(dbKey);
+  const activeKey = isEnvConfigured ? envKey! : isDbConfigured ? dbKey : '';
+  const maskedKey = activeKey ? (activeKey.length > 8 ? `${activeKey.slice(0, 4)}••••••••${activeKey.slice(-4)}` : '••••••••') : '';
+
+  res.json({
+    configured: isEnvConfigured || isDbConfigured,
+    source: isEnvConfigured ? 'env' : isDbConfigured ? 'database' : 'none',
+    maskedKey,
+  });
+});
+
+app.post('/api/settings/gemini-key', requireAuth, requirePermission('manage_settings'), (req: AuthedRequest, res: Response) => {
+  try {
+    const { apiKey } = req.body as { apiKey?: string };
+    const cleanKey = String(apiKey || '').trim();
+    if (!cleanKey) {
+      db.prepare(`DELETE FROM internal_keys WHERE key_name = 'gemini_api_key'`).run();
+      res.json({ success: true, configured: false });
+      return;
+    }
+    db.prepare(`
+      INSERT INTO internal_keys (key_name, key_value) VALUES ('gemini_api_key', ?)
+      ON CONFLICT(key_name) DO UPDATE SET key_value = excluded.key_value
+    `).run(cleanKey);
+    logAudit(req.user, 'UPDATE_GEMINI_KEY', 'internal_keys', 0, { length: cleanKey.length });
+    res.json({ success: true, configured: true });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
 });
 
 app.get('/api/backup/export', requireAuth, requirePermission('manage_settings'), (req: AuthedRequest, res: Response) => {

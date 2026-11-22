@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Camera, CheckCircle2, PlusCircle, ScanBarcode, Upload, VideoOff } from 'lucide-react';
+import { AlertTriangle, Camera, CheckCircle2, ExternalLink, KeyRound, PlusCircle, RefreshCw, ScanBarcode, Upload, VideoOff } from 'lucide-react';
 import { apiFetch } from '../lib/api';
 import { localOfflineProductMatch } from '../lib/offlineDb';
 import { formatBDT, type Lang } from '../i18n';
@@ -25,9 +25,17 @@ export const AIScannerView: React.FC<AIScannerViewProps> = ({
 
   const [cameraActive, setCameraActive] = useState(false);
   const [capturedImage, setCapturedImage] = useState<string>('');
+  const [lastMimeType, setLastMimeType] = useState<string>('image/jpeg');
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState('');
   const [aiResult, setAiResult] = useState<AIRecognitionResult | null>(null);
+
+  // Gemini API Key management state
+  const [geminiConfigured, setGeminiConfigured] = useState<boolean | null>(null);
+  const [geminiInputKey, setGeminiInputKey] = useState('');
+  const [savingKey, setSavingKey] = useState(false);
+  const [keySuccessMsg, setKeySuccessMsg] = useState('');
+  const [showKeySetup, setShowKeySetup] = useState(false);
 
   // Manual verification gate for medicine safety
   const [verifiedName, setVerifiedName] = useState(false);
@@ -57,6 +65,18 @@ export const AIScannerView: React.FC<AIScannerViewProps> = ({
     expiry_date: '',
   });
 
+  // Check Gemini Key status on mount
+  useEffect(() => {
+    apiFetch<{ configured: boolean; source: string; maskedKey: string }>('/api/settings/gemini-key')
+      .then((res) => {
+        setGeminiConfigured(res.configured);
+        if (!res.configured) {
+          setShowKeySetup(true);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     return () => {
       if (streamRef.current) {
@@ -65,17 +85,41 @@ export const AIScannerView: React.FC<AIScannerViewProps> = ({
     };
   }, []);
 
+  // Ensure stream is attached to video element whenever camera becomes active
+  useEffect(() => {
+    if (cameraActive && videoRef.current && streamRef.current) {
+      if (videoRef.current.srcObject !== streamRef.current) {
+        videoRef.current.srcObject = streamRef.current;
+      }
+      videoRef.current.setAttribute('playsinline', 'true');
+      videoRef.current.play().catch(() => {});
+    }
+  }, [cameraActive]);
+
   const startCamera = async () => {
     setError('');
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' },
-      });
+      let stream: MediaStream;
+      try {
+        // Try back / environment camera first
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        });
+      } catch {
+        // Fallback to any default camera (e.g. laptop webcam)
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+        });
+      }
+
       streamRef.current = stream;
+      setCameraActive(true);
+
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        videoRef.current.setAttribute('playsinline', 'true');
+        await videoRef.current.play().catch(() => {});
       }
-      setCameraActive(true);
 
       // Optional native BarcodeDetector check if available in Chromium
       const win = window as unknown as { BarcodeDetector?: new () => { detect: (el: HTMLVideoElement) => Promise<Array<{ rawValue: string }>> } };
@@ -107,6 +151,9 @@ export const AIScannerView: React.FC<AIScannerViewProps> = ({
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
     setCameraActive(false);
   };
 
@@ -120,6 +167,7 @@ export const AIScannerView: React.FC<AIScannerViewProps> = ({
     ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
     const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
     setCapturedImage(dataUrl);
+    setLastMimeType('image/jpeg');
     stopCamera();
     analyzeImage(dataUrl, 'image/jpeg');
   };
@@ -131,9 +179,37 @@ export const AIScannerView: React.FC<AIScannerViewProps> = ({
     reader.onload = () => {
       const dataUrl = String(reader.result || '');
       setCapturedImage(dataUrl);
-      analyzeImage(dataUrl, file.type || 'image/jpeg');
+      const mime = file.type || 'image/jpeg';
+      setLastMimeType(mime);
+      analyzeImage(dataUrl, mime);
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleSaveGeminiKey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanKey = geminiInputKey.trim();
+    if (!cleanKey) return;
+    setSavingKey(true);
+    setError('');
+    setKeySuccessMsg('');
+    try {
+      await apiFetch('/api/settings/gemini-key', {
+        method: 'POST',
+        body: JSON.stringify({ apiKey: cleanKey }),
+      });
+      setGeminiConfigured(true);
+      setShowKeySetup(false);
+      setKeySuccessMsg(lang === 'bn' ? 'জেমিনি এআই কি সফলভাবে সংরক্ষিত হয়েছে!' : 'Gemini AI Key saved successfully!');
+      // If an image was already captured/uploaded, auto retry analysis!
+      if (capturedImage) {
+        analyzeImage(capturedImage, lastMimeType);
+      }
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSavingKey(false);
+    }
   };
 
   const analyzeImage = async (dataUrl: string, mimeType: string) => {
@@ -175,7 +251,11 @@ export const AIScannerView: React.FC<AIScannerViewProps> = ({
         }));
       }
     } catch (err) {
-      setError((err as Error).message);
+      const msg = (err as Error).message;
+      setError(msg);
+      if (msg.includes('GEMINI_API_KEY') || msg.includes('Gemini API Key')) {
+        setShowKeySetup(true);
+      }
     } finally {
       setAnalyzing(false);
     }
@@ -213,25 +293,109 @@ export const AIScannerView: React.FC<AIScannerViewProps> = ({
       {/* Left: Camera & Upload & Offline Barcode */}
       <div className="lg:col-span-5 space-y-4">
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-4">
-          <div>
-            <h2 className="font-display font-semibold text-base text-slate-900 dark:text-white">
-              {lang === 'bn' ? 'AI পণ্য ও ওষুধ শনাক্তকরণ' : 'AI Product & Medicine Recognition'}
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Capture strips, bottles, boxes, or labels (Bangla & English OCR). AI identifies catalog items only — never prescribes medicines.
-            </p>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="font-display font-semibold text-base text-slate-900 dark:text-white">
+                {lang === 'bn' ? 'AI পণ্য ও ওষুধ শনাক্তকরণ' : 'AI Product & Medicine Recognition'}
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                {lang === 'bn'
+                  ? 'ওষুধের পাতা, বোতল বা প্যাকেটের ছবি তুলুন (বাংলা ও ইংরেজি OCR)।'
+                  : 'Capture strips, bottles, boxes, or labels (Bangla & English OCR).'}
+              </p>
+            </div>
+            {geminiConfigured !== null && (
+              <button
+                type="button"
+                onClick={() => setShowKeySetup((s) => !s)}
+                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium border shrink-0 transition-colors ${
+                  geminiConfigured
+                    ? 'border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300'
+                    : 'border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300'
+                }`}
+              >
+                <KeyRound className="w-3 h-3" />
+                <span>
+                  {geminiConfigured
+                    ? lang === 'bn' ? 'AI কি সক্রিয়' : 'AI Active'
+                    : lang === 'bn' ? 'AI কি দিন' : 'Setup Key'}
+                </span>
+              </button>
+            )}
           </div>
 
-          <div className="aspect-[4/3] rounded-xl bg-slate-950 overflow-hidden flex items-center justify-center relative border border-slate-800">
-            {cameraActive ? (
-              <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
-            ) : capturedImage ? (
-              <img src={capturedImage} alt="Captured product" className="w-full h-full object-contain" />
-            ) : (
-              <div className="text-center text-slate-400 text-xs px-6">
-                <Camera className="w-8 h-8 mx-auto mb-2 opacity-60" />
-                Open device camera or upload a packaging photo to extract OCR text & match stock.
+          {/* Gemini API Key Banner & In-App Setup */}
+          {showKeySetup && (
+            <div className="rounded-xl border border-teal-200 dark:border-teal-900 bg-teal-50/80 dark:bg-teal-950/40 p-3.5 text-xs space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="font-semibold text-teal-900 dark:text-teal-300 flex items-center gap-1.5">
+                  <KeyRound className="w-4 h-4 text-teal-700 dark:text-teal-400 shrink-0" />
+                  <span>{lang === 'bn' ? 'Google Gemini AI Key কনফিগারেশন' : 'Google Gemini AI Key Configuration'}</span>
+                </div>
+                <a
+                  href="https://aistudio.google.com/app/apikey"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-[11px] font-medium text-teal-700 hover:text-teal-800 dark:text-teal-400 underline underline-offset-2 shrink-0"
+                >
+                  <span>{lang === 'bn' ? 'ফ্রি কী নিন (Google AI Studio)' : 'Get Free Key (Google AI Studio)'}</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
               </div>
+              <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                {lang === 'bn'
+                  ? 'গুগল জেমিনি এআই সম্পূর্ণ বিনামূল্যে এপিআই কী দিয়ে থাকে। লিঙ্ক থেকে কী কপি করে নিচে পেস্ট করে সংরক্ষণ করুন।'
+                  : 'Google Gemini AI provides a free API key. Copy the key from Google AI Studio and paste it below.'}
+              </p>
+              <form onSubmit={handleSaveGeminiKey} className="flex gap-2">
+                <input
+                  type="password"
+                  value={geminiInputKey}
+                  onChange={(e) => setGeminiInputKey(e.target.value)}
+                  placeholder={lang === 'bn' ? 'Gemini API Key পেস্ট করুন (যেমন: AIzaSy...)' : 'Paste Gemini API Key (e.g. AIzaSy...)'}
+                  className="flex-1 rounded-lg border border-teal-300 dark:border-teal-800 bg-white dark:bg-slate-900 px-3 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-600"
+                />
+                <button
+                  type="submit"
+                  disabled={savingKey || !geminiInputKey.trim()}
+                  className="px-3.5 py-1.5 rounded-lg bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white font-semibold text-xs transition-colors shrink-0"
+                >
+                  {savingKey ? (lang === 'bn' ? 'সেভ হচ্ছে...' : 'Saving...') : (lang === 'bn' ? 'সংরক্ষণ করুন' : 'Save Key')}
+                </button>
+              </form>
+            </div>
+          )}
+
+          {keySuccessMsg && (
+            <div className="rounded-lg border border-emerald-300 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-950/40 p-2.5 text-xs text-emerald-800 dark:text-emerald-300 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{keySuccessMsg}</span>
+              </div>
+              <button type="button" onClick={() => setKeySuccessMsg('')} className="text-emerald-700 text-xs font-semibold">✕</button>
+            </div>
+          )}
+
+          {/* Always Keep Video element mounted to eliminate blank screen */}
+          <div className="aspect-[4/3] rounded-xl bg-slate-950 overflow-hidden flex items-center justify-center relative border border-slate-800">
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className={cameraActive ? 'w-full h-full object-cover' : 'hidden'}
+            />
+            {!cameraActive && (
+              capturedImage ? (
+                <img src={capturedImage} alt="Captured product" className="w-full h-full object-contain" />
+              ) : (
+                <div className="text-center text-slate-400 text-xs px-6">
+                  <Camera className="w-8 h-8 mx-auto mb-2 opacity-60" />
+                  {lang === 'bn'
+                    ? 'ডিভাইসের ক্যামেরা চালু করুন অথবা ওষুধের ছবি আপলোড করে স্বয়ংক্রিয় তথ্য রিড করুন।'
+                    : 'Open device camera or upload a packaging photo to extract OCR text & match stock.'}
+                </div>
+              )
             )}
           </div>
 
@@ -242,7 +406,7 @@ export const AIScannerView: React.FC<AIScannerViewProps> = ({
                 className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-teal-700 hover:bg-teal-800 text-white px-4 py-2 text-xs font-semibold"
               >
                 <Camera className="w-4 h-4" />
-                Open Camera
+                {lang === 'bn' ? 'ক্যামেরা চালু করুন' : 'Open Camera'}
               </button>
             ) : (
               <>
@@ -250,28 +414,38 @@ export const AIScannerView: React.FC<AIScannerViewProps> = ({
                   onClick={captureFromCamera}
                   className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 text-xs font-semibold"
                 >
-                  Capture & Identify
+                  {lang === 'bn' ? 'ছবি তুলুন ও শনাক্ত করুন' : 'Capture & Identify'}
                 </button>
                 <button
                   onClick={stopCamera}
                   className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-2 text-xs font-medium"
                 >
                   <VideoOff className="w-4 h-4" />
-                  Stop
+                  {lang === 'bn' ? 'বন্ধ করুন' : 'Stop'}
                 </button>
               </>
             )}
 
             <label className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 px-4 py-2 text-xs font-semibold cursor-pointer">
               <Upload className="w-4 h-4" />
-              Upload Image
+              {lang === 'bn' ? 'ছবি আপলোড করুন' : 'Upload Image'}
               <input type="file" accept="image/*" capture="environment" onChange={handleFileUpload} className="hidden" />
             </label>
           </div>
 
           {error && (
-            <div className="rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-3 text-xs text-amber-800 dark:text-amber-200">
-              {error}
+            <div className="rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-3 text-xs text-amber-800 dark:text-amber-200 space-y-1.5">
+              <div className="font-medium">{error}</div>
+              {(error.includes('GEMINI_API_KEY') || error.includes('Gemini API Key')) && (
+                <button
+                  type="button"
+                  onClick={() => setShowKeySetup(true)}
+                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-700 dark:text-teal-300 underline"
+                >
+                  <KeyRound className="w-3.5 h-3.5" />
+                  {lang === 'bn' ? 'এখানে ক্লিক করে Gemini API Key দিন' : 'Click here to configure Gemini API Key'}
+                </button>
+              )}
             </div>
           )}
         </div>

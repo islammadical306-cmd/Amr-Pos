@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Cloud, Database, Download, Image, MessageSquare, RefreshCw, Shield, Trash2, Upload, WifiOff } from 'lucide-react';
+import { CheckCircle2, Cloud, Database, Download, ExternalLink, Image, KeyRound, MessageSquare, RefreshCw, Shield, Trash2, Upload, WifiOff } from 'lucide-react';
 import { apiFetch } from '../lib/api';
 import { getPendingQueue } from '../lib/offlineDb';
 import type { Lang } from '../i18n';
@@ -37,9 +37,29 @@ export const AdminSyncView: React.FC<AdminSyncViewProps> = ({
   const [shopForm, setShopForm] = useState<ShopSettings | null>(settings);
   const [statusMsg, setStatusMsg] = useState('');
 
+  const [geminiStatus, setGeminiStatus] = useState<{ configured: boolean; source: string; maskedKey: string } | null>(null);
+  const [geminiKeyInput, setGeminiKeyInput] = useState('');
+  const [geminiSaving, setGeminiSaving] = useState(false);
+  const [geminiMsg, setGeminiMsg] = useState('');
+
   useEffect(() => {
     setShopForm(settings);
   }, [settings]);
+
+  const loadGeminiKeyStatus = async () => {
+    try {
+      const res = await apiFetch<{ configured: boolean; source: string; maskedKey: string }>('/api/settings/gemini-key');
+      setGeminiStatus(res);
+    } catch {
+      // ignore
+    }
+  };
+
+  useEffect(() => {
+    if (mode === 'settings') {
+      loadGeminiKeyStatus();
+    }
+  }, [mode]);
 
   const loadSyncData = async () => {
     const q = await getPendingQueue();
@@ -376,6 +396,86 @@ export const AdminSyncView: React.FC<AdminSyncViewProps> = ({
       )}
 
       <div className="lg:col-span-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-4 text-xs">
+        {/* Google Gemini AI Vision OCR Key Setup */}
+        <div className="space-y-2.5 pb-4 border-b border-slate-200 dark:border-slate-800">
+          <div className="flex items-center justify-between">
+            <h3 className="font-display font-semibold text-sm flex items-center gap-1.5 text-slate-900 dark:text-white">
+              <KeyRound className="w-4 h-4 text-teal-700 dark:text-teal-400" />
+              {lang === 'bn' ? 'Google Gemini AI কী' : 'Google Gemini AI Key'}
+            </h3>
+            {geminiStatus && (
+              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold ${
+                geminiStatus.configured
+                  ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300'
+                  : 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300'
+              }`}>
+                {geminiStatus.configured ? (lang === 'bn' ? 'সক্রিয়' : 'Active') : (lang === 'bn' ? 'অনুপস্থিত' : 'Missing')}
+              </span>
+            )}
+          </div>
+          <p className="text-slate-500 text-[11px] leading-relaxed">
+            {lang === 'bn'
+              ? 'মোবাইল ক্যামেরা বা আপলোড করা ওষুধের ছবি স্বয়ংক্রিয়ভাবে রিড করতে এই কী ব্যবহৃত হয়।'
+              : 'Used by the AI camera scanner to recognize medicine packaging and labels automatically.'}
+          </p>
+
+          {geminiStatus?.maskedKey && (
+            <div className="text-[11px] font-mono text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-950 p-2 rounded border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+              <span>{geminiStatus.maskedKey}</span>
+              <span className="text-[10px] text-teal-700 dark:text-teal-400 font-semibold uppercase">{geminiStatus.source}</span>
+            </div>
+          )}
+
+          <form onSubmit={async (e) => {
+            e.preventDefault();
+            if (!geminiKeyInput.trim()) return;
+            setGeminiSaving(true);
+            setGeminiMsg('');
+            try {
+              await apiFetch('/api/settings/gemini-key', {
+                method: 'POST',
+                body: JSON.stringify({ apiKey: geminiKeyInput.trim() }),
+              });
+              setGeminiMsg(lang === 'bn' ? 'কী সফলভাবে সংরক্ষিত হয়েছে!' : 'Key saved successfully!');
+              setGeminiKeyInput('');
+              await loadGeminiKeyStatus();
+            } catch (err) {
+              setGeminiMsg(`Error: ${(err as Error).message}`);
+            } finally {
+              setGeminiSaving(false);
+            }
+          }} className="space-y-2">
+            <input
+              type="password"
+              value={geminiKeyInput}
+              onChange={(e) => setGeminiKeyInput(e.target.value)}
+              placeholder={lang === 'bn' ? 'Gemini API Key পেস্ট করুন...' : 'Paste Gemini API Key...'}
+              className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2 text-xs"
+            />
+            <div className="flex items-center gap-2">
+              <button
+                type="submit"
+                disabled={geminiSaving || !geminiKeyInput.trim()}
+                className="flex-1 py-1.5 rounded-lg bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white font-semibold text-xs transition-colors"
+              >
+                {geminiSaving ? (lang === 'bn' ? 'সংরক্ষণ হচ্ছে...' : 'Saving...') : (lang === 'bn' ? 'কী সেভ করুন' : 'Save Key')}
+              </button>
+              <a
+                href="https://aistudio.google.com/app/apikey"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[11px] font-medium text-teal-700 dark:text-teal-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+              >
+                <span>{lang === 'bn' ? 'ফ্রি কী নিন' : 'Free Key'}</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+            {geminiMsg && (
+              <div className="text-[11px] text-teal-700 dark:text-teal-400 font-medium">{geminiMsg}</div>
+            )}
+          </form>
+        </div>
+
         <h3 className="font-display font-semibold text-sm flex items-center gap-2">
           <Database className="w-4 h-4 text-teal-700" /> Database Backup & Restore
         </h3>

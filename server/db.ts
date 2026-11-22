@@ -1,8 +1,10 @@
 import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 
-const dbPath = process.env.DB_PATH || path.resolve(process.cwd(), 'amarpos.db');
+const defaultDbDir = fs.existsSync('/data') ? '/data' : process.cwd();
+const dbPath = process.env.DB_PATH || path.resolve(defaultDbDir, 'amarpos.db');
 const dbDir = path.dirname(dbPath);
 if (!fs.existsSync(dbDir)) {
   fs.mkdirSync(dbDir, { recursive: true });
@@ -406,6 +408,36 @@ export function initDatabase() {
     db.exec(`ALTER TABLE shop_settings ADD COLUMN logo_url TEXT DEFAULT '';`);
   }
 
+  // Ensure default Super Admin account exists if users table is empty
+  try {
+    const userCount = (db.prepare(`SELECT COUNT(*) as c FROM users`).get() as { c: number }).c;
+    if (userCount === 0) {
+      const salt = crypto.randomBytes(16).toString('hex');
+      const hash = crypto.scryptSync('admin123', salt, 64).toString('hex');
+      db.prepare(`
+        INSERT INTO users (name, email, role, password_hash, password_salt, active)
+        VALUES (?, ?, 'Super Admin', ?, ?, 1)
+      `).run('Super Admin', 'admin@amarpos.com', hash, salt);
+    }
+  } catch {
+    // ignore
+  }
+
+  // Ensure all initial financial figures start clean at 0 by purging any legacy seed transactions
+  try {
+    db.exec(`
+      DELETE FROM sale_items WHERE sale_id IN (SELECT id FROM sales WHERE client_tx_id IN ('seed-sale-1', 'seed-sale-2'));
+      DELETE FROM sales WHERE client_tx_id IN ('seed-sale-1', 'seed-sale-2');
+      DELETE FROM purchase_items WHERE purchase_id IN (SELECT id FROM purchases WHERE invoice_no = 'PUR-2026-0001');
+      DELETE FROM purchases WHERE invoice_no = 'PUR-2026-0001';
+      DELETE FROM expenses WHERE client_tx_id = 'seed-exp-1';
+      UPDATE suppliers SET total_due = 0 WHERE total_due = 4500;
+      UPDATE customers SET total_purchases = 0, total_payments = 0, current_due = 0 WHERE code IN ('CUST-1001', 'CUST-1002');
+    `);
+  } catch {
+    // ignore
+  }
+
   seedInitialData();
 }
 
@@ -413,6 +445,17 @@ function seedInitialData() {
   const settingsCount = (db.prepare('SELECT COUNT(*) as c FROM shop_settings').get() as { c: number }).c;
   if (settingsCount === 0) {
     db.prepare(`INSERT INTO shop_settings (id) VALUES (1)`).run();
+  }
+
+  // Ensure default Super Admin account exists
+  const userCount = (db.prepare('SELECT COUNT(*) as c FROM users').get() as { c: number }).c;
+  if (userCount === 0) {
+    const salt = crypto.randomBytes(16).toString('hex');
+    const hash = crypto.scryptSync('admin123', salt, 64).toString('hex');
+    db.prepare(`
+      INSERT INTO users (name, email, role, password_hash, password_salt, active)
+      VALUES (?, ?, 'Super Admin', ?, ?, 1)
+    `).run('Super Admin', 'admin@amarpos.com', hash, salt);
   }
 
   const catCount = (db.prepare('SELECT COUNT(*) as c FROM categories').get() as { c: number }).c;
@@ -563,18 +606,18 @@ function seedInitialData() {
     }
   }
 
-  // Seed suppliers
+  // Seed suppliers (Clean initial state: total_due is 0)
   const insSup = db.prepare(`INSERT INTO suppliers (name, phone, company, address, total_due) VALUES (?, ?, ?, ?, ?)`);
-  const sup1 = insSup.run('Kamrul Hasan', '+8801712345678', 'Beximco Pharma Depot', 'Tejgaon Industrial Area, Dhaka', 4500).lastInsertRowid as number;
+  insSup.run('Kamrul Hasan', '+8801712345678', 'Beximco Pharma Depot', 'Tejgaon Industrial Area, Dhaka', 0);
   insSup.run('Tariqul Islam', '+8801819876543', 'Lumen Wellness Distribution', 'Banani, Dhaka', 0);
 
-  // Seed customers
+  // Seed customers (Clean initial state: all transactions & dues are 0)
   const insCust = db.prepare(`
     INSERT INTO customers (code, name, phone, email, address, consent_sms, consent_whatsapp, total_purchases, total_payments, current_due)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  const cust1 = insCust.run('CUST-1001', 'Rafiqul Islam', '+8801711223344', 'rafiq@example.com', 'Road 4, Dhanmondi, Dhaka', 1, 1, 2450, 1800, 650).lastInsertRowid as number;
-  insCust.run('CUST-1002', 'Nusrat Jahan', '+8801911556677', 'nusrat@example.com', 'Mirpur 10, Dhaka', 1, 1, 1670, 1670, 0);
+  insCust.run('CUST-1001', 'Rafiqul Islam', '+8801711223344', 'rafiq@example.com', 'Road 4, Dhanmondi, Dhaka', 1, 1, 0, 0, 0);
+  insCust.run('CUST-1002', 'Nusrat Jahan', '+8801911556677', 'nusrat@example.com', 'Mirpur 10, Dhaka', 1, 1, 0, 0, 0);
 
   // Seed coupons
   db.prepare(`INSERT INTO coupons (code, discount_type, value, min_order, active, expires_at) VALUES (?, ?, ?, ?, 1, ?)`).run(
@@ -584,39 +627,7 @@ function seedInitialData() {
     'HEALTH50', 'FIXED', 50, 500, addDays(90)
   );
 
-  // Seed 2 initial sales and 1 expense so dashboard charts & reports reflect real database records immediately
-  const insSale = db.prepare(`
-    INSERT INTO sales (
-      client_tx_id, invoice_no, customer_id, customer_name, customer_phone, sale_type, status,
-      subtotal, discount_type, discount_value, discount_amount, vat_amount, total, paid_amount, due_amount,
-      payment_method, notes
-    ) VALUES (?, ?, ?, ?, ?, ?, 'COMPLETED', ?, 'FIXED', 0, 0, ?, ?, ?, ?, ?, ?)
-  `);
-  const s1 = insSale.run('seed-sale-1', 'INV-2026-0001', cust1, 'Rafiqul Islam', '+8801711223344', 'POS', 1450, 45, 1495, 845, 650, 'CASH', 'Partial due recorded').lastInsertRowid as number;
-  db.prepare(`
-    INSERT INTO sale_items (sale_id, product_id, product_name, unit, unit_multiplier, quantity, unit_price, cost_price, line_total)
-    VALUES (?, 4, 'Vita-C+ Immune Complex (60 Caps)', 'Bottle', 1, 1, 750, 520, 750),
-           (?, 2, 'Sergel 20mg Capsule', 'Tablet', 1, 100, 7, 5.2, 700)
-  `).run(s1, s1);
-
-  const s2 = insSale.run('seed-sale-2', 'INV-2026-0002', null, 'Walk-in Customer', '', 'POS', 950, 47.5, 997.5, 997.5, 0, 'MOBILE_BANKING', 'bKash payment').lastInsertRowid as number;
-  db.prepare(`
-    INSERT INTO sale_items (sale_id, product_id, product_name, unit, unit_multiplier, quantity, unit_price, cost_price, line_total)
-    VALUES (?, 5, 'Radiance Ceramide Moisturizer 100ml', 'Bottle', 1, 1, 950, 680, 950)
-  `).run(s2);
-
-  // Seed initial purchase
-  const p1 = db.prepare(`
-    INSERT INTO purchases (invoice_no, supplier_id, subtotal, additional_charges, total, paid_amount, due_amount, note)
-    VALUES ('PUR-2026-0001', ?, 12000, 250, 12250, 7750, 4500, 'Monthly pharma restock')
-  `).run(sup1).lastInsertRowid as number;
-  db.prepare(`
-    INSERT INTO purchase_items (purchase_id, product_id, batch_number, expiry_date, quantity, unit_cost, line_total)
-    VALUES (?, 1, 'NX2601A', ?, 320, 1.8, 576)
-  `).run(p1, addDays(340));
-
-  // Seed initial expense
-  db.prepare(`INSERT INTO expenses (client_tx_id, title, category, amount, payment_method, note) VALUES ('seed-exp-1', 'Store Electricity & AC', 'Utilities', 420, 'CASH', 'Daily utility share')`).run();
+  // Note: All sales, purchases, and expenses start completely clean at 0. No fake seed transactions.
 
   // Seed product review
   db.prepare(`INSERT INTO product_reviews (product_id, customer_name, rating, comment) VALUES (4, 'Nusrat Jahan', 5, 'Authentic sealed bottle and super fast delivery in Dhaka.')`).run();
