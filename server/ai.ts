@@ -1,7 +1,7 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import { db } from './db.ts';
 
-function getGeminiClient() {
+export function getGeminiApiKey(): string {
   let apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
     try {
@@ -19,9 +19,15 @@ function getGeminiClient() {
       'GEMINI_API_KEY কনফিগার করা হয়নি। (Gemini API Key is not configured). দয়া করে POS সেটিংস (Settings) থেকে অথবা Render ড্যাশবোর্ডের Environment-এ GEMINI_API_KEY যোগ করুন।'
     );
   }
+  return apiKey;
+}
+
+function getGeminiClient(apiKey: string) {
   return new GoogleGenAI({
     apiKey,
+    apiVersion: 'v1beta',
     httpOptions: {
+      apiVersion: 'v1beta',
       headers: {
         'User-Agent': 'aistudio-build',
       },
@@ -49,20 +55,78 @@ export interface RecognitionExtraction {
   warnings: string[];
 }
 
+async function callGeminiRestFallback(
+  apiKey: string,
+  model: string,
+  imageBase64: string,
+  mimeType: string,
+  languagePreference: string
+): Promise<string> {
+  const cleanBase64 = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+
+  const prompt =
+    `Analyze this retail product or medicine packaging image (strips, bottles, boxes, labels, barcodes). ` +
+    `Perform accurate OCR for both English and Bangla text visible on the packaging. ` +
+    `CRITICAL: NEVER prescribe medicines. Return a strictly valid JSON object with these keys: ` +
+    `{"extractedText": string, "productName": string, "brand": string, "manufacturer": string, "genericName": string, "strength": string, "dosageForm": string, "packageSize": string, "barcode": string, "sku": string, "batchNumber": string, "expiryDate": string, "manufacturingDate": string, "category": string, "confidence": number, "isMedicine": boolean, "warnings": string[]}. ` +
+    `Language preference: ${languagePreference === 'bn' ? 'Bangla and English' : 'English'}. Return ONLY raw JSON without markdown formatting.`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [
+        {
+          parts: [
+            {
+              inlineData: {
+                mimeType: mimeType || 'image/jpeg',
+                data: cleanBase64,
+              },
+            },
+            {
+              text: prompt,
+            },
+          ],
+        },
+      ],
+      generationConfig: {
+        responseMimeType: 'application/json',
+      },
+    }),
+  });
+
+  const data = (await response.json()) as any;
+  if (!response.ok) {
+    const msg = data?.error?.message || `HTTP ${response.status}: ${JSON.stringify(data)}`;
+    throw new Error(msg);
+  }
+
+  const candidate = data.candidates?.[0];
+  const textPart = candidate?.content?.parts?.[0]?.text;
+  if (!textPart) {
+    throw new Error('No content returned from Gemini model');
+  }
+  return textPart;
+}
+
 export async function recognizeProductFromImage(
   imageBase64: string,
   mimeType: string,
   languagePreference: 'en' | 'bn' = 'en'
 ) {
-  const ai = getGeminiClient();
+  const apiKey = getGeminiApiKey();
+  const ai = getGeminiClient(apiKey);
 
   const cleanBase64 = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
 
   const candidateModels = [
     process.env.GEMINI_MODEL,
-    'gemini-2.5-flash',
     'gemini-2.0-flash',
+    'gemini-2.5-flash',
     'gemini-1.5-flash',
+    'gemini-1.5-pro',
   ].filter(Boolean) as string[];
 
   const contentPayload = {
@@ -117,28 +181,62 @@ export async function recognizeProductFromImage(
     },
   };
 
-  let response: any = null;
+  let rawJsonText = '';
   let lastErr: Error | null = null;
+
   for (const model of candidateModels) {
     try {
-      response = await ai.models.generateContent({
+      // 1. Try SDK call with v1beta
+      const response = await ai.models.generateContent({
         model,
         contents: contentPayload,
         config: configPayload,
       });
-      if (response) break;
-    } catch (err) {
-      lastErr = err as Error;
-      continue;
+      if (response && response.text) {
+        rawJsonText = response.text.trim();
+        break;
+      }
+    } catch (sdkErr) {
+      lastErr = sdkErr as Error;
+      // 2. Fallback to direct REST v1beta call
+      try {
+        const restResult = await callGeminiRestFallback(apiKey, model, imageBase64, mimeType, languagePreference);
+        if (restResult) {
+          rawJsonText = restResult.trim();
+          break;
+        }
+      } catch (restErr) {
+        lastErr = restErr as Error;
+        continue;
+      }
     }
   }
 
-  if (!response) {
-    throw lastErr || new Error('Failed to generate content with Gemini model');
+  if (!rawJsonText) {
+    let cleanMsg = lastErr?.message || 'Failed to generate content with Gemini AI model';
+    try {
+      const parsed = JSON.parse(cleanMsg);
+      if (parsed?.error?.message) {
+        cleanMsg = parsed.error.message;
+      }
+    } catch {
+      // ignore
+    }
+    throw new Error(cleanMsg);
   }
 
-  const rawText = (response.text ?? '{}').trim();
-  const extraction = JSON.parse(rawText) as RecognitionExtraction;
+  // Strip potential markdown code fences if model returned ```json ... ```
+  let cleanText = rawJsonText;
+  if (cleanText.startsWith('```')) {
+    cleanText = cleanText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+  }
+  const firstBrace = cleanText.indexOf('{');
+  const lastBrace = cleanText.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace !== -1) {
+    cleanText = cleanText.substring(firstBrace, lastBrace + 1);
+  }
+
+  const extraction = JSON.parse(cleanText) as RecognitionExtraction;
 
   // Match against existing SQLite products catalog
   const allProducts = db

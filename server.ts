@@ -2533,7 +2533,17 @@ app.post('/api/ai/recognize', requireAuth, async (req: AuthedRequest, res: Respo
     });
     res.json(result);
   } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
+    const rawMsg = (err as Error).message || '';
+    let friendly = rawMsg;
+    try {
+      const parsed = JSON.parse(rawMsg);
+      if (parsed?.error?.message) {
+        friendly = parsed.error.message;
+      }
+    } catch {
+      // ignore
+    }
+    res.status(500).json({ error: friendly });
   }
 });
 
