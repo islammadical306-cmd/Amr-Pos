@@ -38,7 +38,7 @@ import {
   readOfflineCatalog,
 } from './lib/offlineDb';
 import { MENU_LABELS, type Lang } from './i18n';
-import type { AuthUser, CartItem, Category, Customer, GoogleSheetsConfig, Product, Sale, ShopSettings } from './types';
+import type { AuthUser, CartItem, Category, Customer, Expense, GoogleSheetsConfig, Product, Sale, ShopSettings, Supplier } from './types';
 import { OfflineBanner, PWAInstallButton, useOnlineStatus } from './components/PWAInstallButton';
 import { InvoiceModal } from './components/InvoiceModal';
 import { AuthView } from './views/AuthView';
@@ -223,30 +223,8 @@ export default function App() {
     const q = await getPendingQueue();
     setPendingCount(q.length);
 
-    if (!isOnline) {
-      const offline = await readOfflineCatalog();
-      setProducts(offline.products);
-      setCategories(offline.categories);
-      setCustomers(offline.customers);
-      setSales(offline.sales);
-      return;
-    }
-
+    // 1. Instantly load local offline database for 0ms immediate render
     try {
-      const [prods, cats, custs, sls, sets] = await Promise.all([
-        apiFetch<Product[]>('/api/products'),
-        apiFetch<Category[]>('/api/categories'),
-        apiFetch<Customer[]>('/api/customers'),
-        apiFetch<Sale[]>('/api/sales'),
-        apiFetch<ShopSettings>('/api/settings'),
-      ]);
-      setProducts(prods);
-      setCategories(cats);
-      setCustomers(custs);
-      setSales(sls);
-      setSettings(sets);
-      await cacheCatalogToIndexedDB(prods, cats, custs, sls);
-    } catch {
       const offline = await readOfflineCatalog();
       if (offline.products.length > 0) {
         setProducts(offline.products);
@@ -254,6 +232,33 @@ export default function App() {
         setCustomers(offline.customers);
         setSales(offline.sales);
       }
+    } catch {
+      // ignore
+    }
+
+    if (!isOnline) {
+      return;
+    }
+
+    // 2. In background, fetch fresh data from server without freezing UI
+    try {
+      const [prods, cats, custs, sls, sets, sups, exps] = await Promise.all([
+        apiFetch<Product[]>('/api/products', { timeoutMs: 4000 }),
+        apiFetch<Category[]>('/api/categories', { timeoutMs: 4000 }),
+        apiFetch<Customer[]>('/api/customers', { timeoutMs: 4000 }),
+        apiFetch<Sale[]>('/api/sales', { timeoutMs: 4000 }),
+        apiFetch<ShopSettings>('/api/settings', { timeoutMs: 4000 }).catch(() => null),
+        apiFetch<Supplier[]>('/api/suppliers', { timeoutMs: 4000 }).catch(() => []),
+        apiFetch<Expense[]>('/api/expenses', { timeoutMs: 4000 }).catch(() => []),
+      ]);
+      setProducts(prods);
+      setCategories(cats);
+      setCustomers(custs);
+      setSales(sls);
+      if (sets) setSettings(sets);
+      void cacheCatalogToIndexedDB(prods, cats, custs, sls, sups, exps);
+    } catch {
+      // offline already rendered, zero disruption
     }
   }, [isOnline]);
 

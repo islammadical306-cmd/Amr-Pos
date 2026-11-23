@@ -21,8 +21,26 @@ export default defineConfig(() => {
           theme_color: '#0f766e',
           background_color: '#f8fafc',
           display: 'standalone',
+          orientation: 'any',
           start_url: '/',
           scope: '/',
+          categories: ['business', 'finance', 'productivity', 'shopping'],
+          shortcuts: [
+            {
+              name: 'POS Sale',
+              short_name: 'Sale',
+              description: 'Open POS checkout',
+              url: '/?tab=pos',
+              icons: [{ src: '/pwa-192x192.png', sizes: '192x192' }],
+            },
+            {
+              name: 'Dashboard',
+              short_name: 'Dashboard',
+              description: 'Open POS dashboard',
+              url: '/?tab=dashboard',
+              icons: [{ src: '/pwa-192x192.png', sizes: '192x192' }],
+            },
+          ],
           icons: [
             {
               src: '/pwa-192x192.png',

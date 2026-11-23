@@ -233,34 +233,30 @@ export const POSView: React.FC<POSViewProps> = ({
         openCashDrawer('Cash Sale Completed');
       }
 
+      let isSuccessOnline = false;
+      let finalInvoiceNo = payload.invoice_no;
+      let finalSaleId = -Date.now();
+
       if (isOnline) {
-        const res = await apiFetch<{ saleId: number; invoice_no: string }>('/api/sales', {
-          method: 'POST',
-          body: JSON.stringify(payload),
-        });
-        setStatusMsg({
-          type: 'ok',
-          text: status === 'HELD' ? `Sale held (${res.invoice_no})` : `Sale completed (${res.invoice_no})`,
-        });
-        await onRefreshData();
-        if (status === 'COMPLETED') {
-          onPrintSale({
-            ...(payload as unknown as Sale),
-            id: res.saleId,
-            invoice_no: res.invoice_no,
-            total: grandTotal,
-            tendered_amount: effectiveTendered,
-            paid_amount: effectivePaid,
-            due_amount: dueAmount,
-            change_amount: changeAmount,
-            sale_type: 'POS',
-            payment_breakdown_json: '{}',
-            coupon_code: '',
-            notes: '',
-            synced_from_offline: 0,
+        try {
+          const res = await apiFetch<{ saleId: number; invoice_no: string }>('/api/sales', {
+            method: 'POST',
+            body: JSON.stringify(payload),
+            timeoutMs: 3500,
           });
+          isSuccessOnline = true;
+          finalInvoiceNo = res.invoice_no;
+          finalSaleId = res.saleId;
+          setStatusMsg({
+            type: 'ok',
+            text: status === 'HELD' ? `Sale held (${res.invoice_no})` : `Sale completed (${res.invoice_no})`,
+          });
+        } catch (netErr) {
+          console.warn('Online sync failed, gracefully recording offline in IndexedDB:', netErr);
         }
-      } else {
+      }
+
+      if (!isSuccessOnline) {
         await queueOfflineOperation({
           id: clientTxId,
           type: 'SALE',
@@ -269,25 +265,28 @@ export const POSView: React.FC<POSViewProps> = ({
         });
         setStatusMsg({
           type: 'ok',
-          text: `Saved offline (${payload.invoice_no}) — queued in IndexedDB for sync`,
+          text: status === 'HELD' ? `Saved offline (Held ${payload.invoice_no})` : `Saved offline (${payload.invoice_no}) — queued in IndexedDB for sync`,
         });
-        await onRefreshData();
-        if (status === 'COMPLETED') {
-          onPrintSale({
-            ...(payload as unknown as Sale),
-            id: -1,
-            total: grandTotal,
-            tendered_amount: effectiveTendered,
-            paid_amount: effectivePaid,
-            due_amount: dueAmount,
-            change_amount: changeAmount,
-            sale_type: 'POS',
-            payment_breakdown_json: '{}',
-            coupon_code: '',
-            notes: 'Offline receipt',
-            synced_from_offline: 1,
-          });
-        }
+      }
+
+      await onRefreshData();
+
+      if (status === 'COMPLETED') {
+        onPrintSale({
+          ...(payload as unknown as Sale),
+          id: finalSaleId,
+          invoice_no: finalInvoiceNo,
+          total: grandTotal,
+          tendered_amount: effectiveTendered,
+          paid_amount: effectivePaid,
+          due_amount: dueAmount,
+          change_amount: changeAmount,
+          sale_type: 'POS',
+          payment_breakdown_json: '{}',
+          coupon_code: '',
+          notes: isSuccessOnline ? '' : 'Offline receipt (pending sync)',
+          synced_from_offline: isSuccessOnline ? 0 : 1,
+        });
       }
 
       setCart([]);
@@ -764,7 +763,7 @@ export const POSView: React.FC<POSViewProps> = ({
             <span>{lang === 'bn' ? 'ক্যাশড্রয়ার' : 'Drawer'}</span>
           </button>
           <button
-            disabled={cart.length === 0 || submitting || !isOnline}
+            disabled={cart.length === 0 || submitting}
             onClick={() => submitSale('HELD')}
             className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 dark:border-slate-700 py-2.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50"
           >

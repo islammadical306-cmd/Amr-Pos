@@ -9,9 +9,14 @@ export function getAuthToken(): string | null {
   return authToken;
 }
 
-export async function apiFetch<T = unknown>(url: string, options: RequestInit = {}): Promise<T> {
-  const headers = new Headers(options.headers || {});
-  if (!headers.has('Content-Type') && options.body && !(options.body instanceof FormData)) {
+export interface ApiFetchOptions extends RequestInit {
+  timeoutMs?: number;
+}
+
+export async function apiFetch<T = unknown>(url: string, options: ApiFetchOptions = {}): Promise<T> {
+  const { timeoutMs = 6000, signal, ...restOptions } = options;
+  const headers = new Headers(restOptions.headers || {});
+  if (!headers.has('Content-Type') && restOptions.body && !(restOptions.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json');
   }
   if (!headers.has('X-Requested-With')) {
@@ -21,27 +26,48 @@ export async function apiFetch<T = unknown>(url: string, options: RequestInit = 
     headers.set('Authorization', `Bearer ${authToken}`);
   }
 
-  const method = String(options.method || 'GET').toUpperCase();
-  const res = await fetch(url, { ...options, headers, credentials: 'include' });
-  const contentType = res.headers.get('content-type') || '';
-  const data = contentType.includes('application/json') ? await res.json() : await res.text();
+  const method = String(restOptions.method || 'GET').toUpperCase();
 
-  if (!res.ok) {
-    const errMsg = typeof data === 'object' && data && 'error' in data ? String((data as { error: string }).error) : `Request failed (${res.status})`;
-    throw new Error(errMsg);
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  if (timeoutMs > 0) {
+    timer = setTimeout(() => controller.abort(), timeoutMs);
   }
 
-  if (
-    typeof window !== 'undefined' &&
-    method !== 'GET' &&
-    method !== 'HEAD' &&
-    !url.startsWith('/api/auth/') &&
-    !url.startsWith('/api/sheets/')
-  ) {
-    window.dispatchEvent(new CustomEvent('amarpos:tx-completed', { detail: { url, method } }));
+  if (signal) {
+    signal.addEventListener('abort', () => controller.abort());
   }
 
-  return data as T;
+  try {
+    const res = await fetch(url, { ...restOptions, headers, signal: controller.signal, credentials: 'include' });
+    if (timer) clearTimeout(timer);
+
+    const contentType = res.headers.get('content-type') || '';
+    const data = contentType.includes('application/json') ? await res.json() : await res.text();
+
+    if (!res.ok) {
+      const errMsg = typeof data === 'object' && data && 'error' in data ? String((data as { error: string }).error) : `Request failed (${res.status})`;
+      throw new Error(errMsg);
+    }
+
+    if (
+      typeof window !== 'undefined' &&
+      method !== 'GET' &&
+      method !== 'HEAD' &&
+      !url.startsWith('/api/auth/') &&
+      !url.startsWith('/api/sheets/')
+    ) {
+      window.dispatchEvent(new CustomEvent('amarpos:tx-completed', { detail: { url, method } }));
+    }
+
+    return data as T;
+  } catch (err) {
+    if (timer) clearTimeout(timer);
+    if ((err as Error).name === 'AbortError') {
+      throw new Error(`Request timed out after ${timeoutMs}ms (Offline / Server unreachable)`);
+    }
+    throw err;
+  }
 }
 
 export async function downloadCsvBackup(
