@@ -21,7 +21,7 @@ import {
   setSessionCookie,
   verifyPassword,
 } from './server/auth.ts';
-import { recognizeProductFromImage, getAvailableGeminiModels, getGeminiApiKey } from './server/ai.ts';
+import { recognizeProductFromImage, getAvailableGeminiModels, getGeminiApiKey, saveGeminiKeyPermanently } from './server/ai.ts';
 import {
   SMS_PROVIDER_PRESETS,
   type SmsGatewayRow,
@@ -34,6 +34,8 @@ import {
   maskSecretHint,
   normalizePhoneNumber,
   renderSmsTemplate,
+  initPermanentSmsGateways,
+  saveSmsGatewaysBackup,
 } from './server/sms.ts';
 import {
   type GoogleSheetsConfigRow,
@@ -51,6 +53,7 @@ import {
 
 initDatabase();
 cleanupBrokenLocalImagePaths();
+initPermanentSmsGateways();
 
 const app = express();
 app.set('trust proxy', 1);
@@ -1673,9 +1676,22 @@ function getActiveDefaultGateway(preferredId?: number | null): SmsGatewayRow | u
     .prepare(`SELECT * FROM sms_gateways WHERE active = 1 AND is_default = 1 ORDER BY id DESC LIMIT 1`)
     .get() as unknown as SmsGatewayRow | undefined;
   if (def) return def;
-  return db
+
+  const anyActive = db
     .prepare(`SELECT * FROM sms_gateways WHERE active = 1 ORDER BY id DESC LIMIT 1`)
     .get() as unknown as SmsGatewayRow | undefined;
+  if (anyActive) return anyActive;
+
+  // Auto-heal: If any gateway exists, activate it
+  const anyRow = db.prepare(`SELECT * FROM sms_gateways ORDER BY id DESC LIMIT 1`).get() as unknown as SmsGatewayRow | undefined;
+  if (anyRow) {
+    db.prepare(`UPDATE sms_gateways SET active = 1, is_default = 1 WHERE id = ?`).run(anyRow.id);
+    return { ...anyRow, active: 1, is_default: 1 };
+  }
+
+  // Auto-heal 2: Re-run permanent initialization and return default
+  initPermanentSmsGateways();
+  return db.prepare(`SELECT * FROM sms_gateways WHERE active = 1 ORDER BY id DESC LIMIT 1`).get() as unknown as SmsGatewayRow | undefined;
 }
 
 interface ResolvedRecipient {
@@ -1850,6 +1866,7 @@ app.post('/api/sms/gateways', requireAuth, requirePermission('manage_settings'),
     });
 
     const created = db.prepare(`SELECT * FROM sms_gateways WHERE id = ?`).get(id) as unknown as SmsGatewayRow;
+    saveSmsGatewaysBackup();
     res.status(201).json(sanitizeGatewayForClient(created));
   } catch (err) {
     res.status(400).json({ error: (err as Error).message });
@@ -1921,6 +1938,7 @@ app.put('/api/sms/gateways/:id', requireAuth, requirePermission('manage_settings
     });
 
     const updated = db.prepare(`SELECT * FROM sms_gateways WHERE id = ?`).get(id) as unknown as SmsGatewayRow;
+    saveSmsGatewaysBackup();
     res.json(sanitizeGatewayForClient(updated));
   } catch (err) {
     res.status(400).json({ error: (err as Error).message });
@@ -1930,6 +1948,7 @@ app.put('/api/sms/gateways/:id', requireAuth, requirePermission('manage_settings
 app.delete('/api/sms/gateways/:id', requireAuth, requirePermission('manage_settings'), (req: AuthedRequest, res: Response) => {
   const id = Number(req.params.id);
   db.prepare(`DELETE FROM sms_gateways WHERE id = ?`).run(id);
+  saveSmsGatewaysBackup();
   logAudit(req.user, 'DELETE_SMS_GATEWAY', 'sms_gateways', id, {});
   res.json({ ok: true });
 });
@@ -3248,43 +3267,30 @@ app.put('/api/settings', requireAuth, requirePermission('manage_settings'), (req
 });
 
 app.get('/api/settings/gemini-key', requireAuth, (_req: Request, res: Response) => {
-  const envKey = process.env.GEMINI_API_KEY?.trim();
-  const isEnvConfigured = Boolean(envKey && envKey !== 'MY_GEMINI_API_KEY');
-  let dbKey = '';
+  let activeKey = '';
   try {
-    const row = db.prepare(`SELECT key_value FROM internal_keys WHERE key_name = 'gemini_api_key'`).get() as { key_value: string } | undefined;
-    if (row?.key_value?.trim() && row.key_value.trim() !== 'MY_GEMINI_API_KEY') {
-      dbKey = row.key_value.trim();
-    }
+    activeKey = getGeminiApiKey();
   } catch {
     // ignore
   }
-  const isDbConfigured = Boolean(dbKey);
-  const activeKey = isEnvConfigured ? envKey! : isDbConfigured ? dbKey : '';
-  const maskedKey = activeKey ? (activeKey.length > 8 ? `${activeKey.slice(0, 4)}••••••••${activeKey.slice(-4)}` : '••••••••') : '';
+
+  const isConfigured = Boolean(activeKey && activeKey !== 'MY_GEMINI_API_KEY');
+  const maskedKey = isConfigured ? (activeKey.length > 8 ? `${activeKey.slice(0, 4)}••••••••${activeKey.slice(-4)}` : '••••••••') : '';
 
   res.json({
-    configured: isEnvConfigured || isDbConfigured,
-    source: isEnvConfigured ? 'env' : isDbConfigured ? 'database' : 'none',
+    configured: isConfigured,
+    source: process.env.GEMINI_API_KEY ? 'env' : isConfigured ? 'database' : 'none',
     maskedKey,
   });
 });
 
-app.post('/api/settings/gemini-key', requireAuth, requirePermission('manage_settings'), (req: AuthedRequest, res: Response) => {
+app.post('/api/settings/gemini-key', requireAuth, (req: AuthedRequest, res: Response) => {
   try {
     const { apiKey } = req.body as { apiKey?: string };
     const cleanKey = String(apiKey || '').trim();
-    if (!cleanKey) {
-      db.prepare(`DELETE FROM internal_keys WHERE key_name = 'gemini_api_key'`).run();
-      res.json({ success: true, configured: false });
-      return;
-    }
-    db.prepare(`
-      INSERT INTO internal_keys (key_name, key_value) VALUES ('gemini_api_key', ?)
-      ON CONFLICT(key_name) DO UPDATE SET key_value = excluded.key_value
-    `).run(cleanKey);
+    saveGeminiKeyPermanently(cleanKey);
     logAudit(req.user, 'UPDATE_GEMINI_KEY', 'internal_keys', 0, { length: cleanKey.length });
-    res.json({ success: true, configured: true });
+    res.json({ success: true, configured: Boolean(cleanKey) });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }

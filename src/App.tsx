@@ -137,6 +137,47 @@ export default function App() {
       });
   }, []);
 
+  // Auto-restore and synchronize permanent Gemini API Key and SMS Gateway from localStorage if server lacks them
+  useEffect(() => {
+    if (!isOnline) return;
+
+    // 1. Silent Gemini Key sync
+    const localGeminiKey = localStorage.getItem('amarpos_gemini_api_key')?.trim();
+    if (localGeminiKey) {
+      apiFetch<{ configured: boolean }>('/api/settings/gemini-key')
+        .then((res) => {
+          if (!res.configured) {
+            apiFetch('/api/settings/gemini-key', {
+              method: 'POST',
+              body: JSON.stringify({ apiKey: localGeminiKey }),
+            }).catch(() => {});
+          }
+        })
+        .catch(() => {});
+    }
+
+    // 2. Silent SMS Gateway sync
+    const localGwRaw = localStorage.getItem('amarpos_permanent_sms_gateway');
+    if (localGwRaw) {
+      apiFetch<Array<{ active: number; is_default: number; sender_id?: string; key_hint?: string }>>('/api/sms/gateways')
+        .then((gws) => {
+          const hasActiveCredentials = gws.some((g) => g.active === 1 && (g.key_hint || g.sender_id));
+          if (!hasActiveCredentials) {
+            try {
+              const parsed = JSON.parse(localGwRaw);
+              if (parsed && parsed.name && parsed.base_url) {
+                apiFetch('/api/sms/gateways', {
+                  method: 'POST',
+                  body: JSON.stringify({ ...parsed, is_default: true, active: true }),
+                }).catch(() => {});
+              }
+            } catch {}
+          }
+        })
+        .catch(() => {});
+    }
+  }, [isOnline]);
+
   // Listen to custom settings update events
   useEffect(() => {
     const handleSettingsUpdated = (e: Event) => {

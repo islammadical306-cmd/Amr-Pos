@@ -1,0 +1,29 @@
+[
+  {
+    "id": 1,
+    "name": "BulkSMSBD Primary",
+    "provider": "BULKSMSBD",
+    "base_url": "https://bulksmsbd.net/api/smsapi",
+    "balance_url": "https://bulksmsbd.net/api/getBalanceApi",
+    "http_method": "POST",
+    "payload_format": "FORM",
+    "sender_id": "",
+    "api_key_enc": "",
+    "api_secret_enc": "",
+    "key_hint": "",
+    "to_param": "number",
+    "message_param": "message",
+    "sender_param": "senderid",
+    "api_key_param": "api_key",
+    "extra_params_json": "{\"type\":\"text\"}",
+    "custom_headers_json": "{}",
+    "batch_delay_ms": 150,
+    "is_default": 1,
+    "active": 1,
+    "last_tested_at": "",
+    "last_test_status": "ACTIVE",
+    "created_at": "2026-11-23 03:34:43",
+    "api_key": "",
+    "api_secret": ""
+  }
+]

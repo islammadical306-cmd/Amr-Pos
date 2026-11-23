@@ -943,6 +943,9 @@ export const AdminSyncView: React.FC<AdminSyncViewProps> = ({
                 method: 'POST',
                 body: JSON.stringify({ apiKey: geminiKeyInput.trim() }),
               });
+              try {
+                localStorage.setItem('amarpos_gemini_api_key', geminiKeyInput.trim());
+              } catch {}
               setGeminiMsg(lang === 'bn' ? 'কী সফলভাবে সংরক্ষিত হয়েছে!' : 'Key saved successfully!');
               setGeminiKeyInput('');
               await loadGeminiKeyStatus();

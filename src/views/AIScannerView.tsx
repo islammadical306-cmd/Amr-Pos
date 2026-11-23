@@ -66,14 +66,27 @@ export const AIScannerView: React.FC<AIScannerViewProps> = ({
     expiry_date: '',
   });
 
-  // Check Gemini Key status on mount
+  // Check Gemini Key status on mount and auto-sync from localStorage if needed
   useEffect(() => {
+    const localKey = localStorage.getItem('amarpos_gemini_api_key')?.trim();
+
     apiFetch<{ configured: boolean; source: string; maskedKey: string }>('/api/settings/gemini-key')
-      .then((res) => {
-        setGeminiConfigured(res.configured);
-        if (!res.configured) {
-          setShowKeySetup(true);
+      .then(async (res) => {
+        if (!res.configured && localKey) {
+          try {
+            await apiFetch('/api/settings/gemini-key', {
+              method: 'POST',
+              body: JSON.stringify({ apiKey: localKey }),
+            });
+            setGeminiConfigured(true);
+            setShowKeySetup(false);
+            return;
+          } catch {
+            // ignore
+          }
         }
+        setGeminiConfigured(res.configured);
+        setShowKeySetup(!res.configured && !localKey);
       })
       .catch(() => {});
   }, []);
@@ -199,6 +212,10 @@ export const AIScannerView: React.FC<AIScannerViewProps> = ({
         method: 'POST',
         body: JSON.stringify({ apiKey: cleanKey }),
       });
+      // Save permanently in browser localStorage as well
+      try {
+        localStorage.setItem('amarpos_gemini_api_key', cleanKey);
+      } catch {}
       setGeminiConfigured(true);
       setShowKeySetup(false);
       setKeySuccessMsg('');
@@ -271,6 +288,23 @@ export const AIScannerView: React.FC<AIScannerViewProps> = ({
       }
     } catch (err) {
       const msg = (err as Error).message;
+      const localKey = localStorage.getItem('amarpos_gemini_api_key')?.trim();
+      if ((msg.includes('GEMINI_API_KEY') || msg.includes('Gemini API Key')) && localKey) {
+        // Auto retry once after silent re-sync
+        try {
+          await apiFetch('/api/settings/gemini-key', {
+            method: 'POST',
+            body: JSON.stringify({ apiKey: localKey }),
+          });
+          setGeminiConfigured(true);
+          const retryRes = await apiFetch<AIRecognitionResult>('/api/ai/recognize', {
+            method: 'POST',
+            body: JSON.stringify({ imageBase64: dataUrl, mimeType, languagePreference: lang }),
+          });
+          setAiResult(retryRes);
+          return;
+        } catch {}
+      }
       setError(msg);
       if (msg.includes('GEMINI_API_KEY') || msg.includes('Gemini API Key')) {
         setShowKeySetup(true);
@@ -335,9 +369,11 @@ export const AIScannerView: React.FC<AIScannerViewProps> = ({
                 }`}
               >
                 <KeyRound className="w-3.5 h-3.5" />
-                {!geminiConfigured && (
-                  <span>{lang === 'bn' ? 'AI কী দিন' : 'Setup AI Key'}</span>
-                )}
+                <span>
+                  {geminiConfigured
+                    ? (lang === 'bn' ? 'API কী সেটিংস' : 'AI Key Settings')
+                    : (lang === 'bn' ? 'AI কী দিন' : 'Setup AI Key')}
+                </span>
               </button>
             )}
           </div>

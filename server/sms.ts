@@ -1,7 +1,9 @@
 import crypto from 'node:crypto';
 import dns from 'node:dns/promises';
+import fs from 'node:fs';
 import net from 'node:net';
-import { db } from './db.ts';
+import path from 'node:path';
+import { db, defaultDbDir, updateEnvFile } from './db.ts';
 
 export type SmsProviderType =
   | 'SSLWIRELESS'
@@ -195,6 +197,174 @@ export function maskSecretHint(secret: string): string {
   if (!s) return '';
   if (s.length <= 4) return '••••';
   return `••••${s.slice(-4)}`;
+}
+
+export function saveSmsGatewaysBackup(): void {
+  try {
+    const gateways = db.prepare(`SELECT * FROM sms_gateways`).all() as unknown as SmsGatewayRow[];
+    const backupList = gateways.map((g) => {
+      const apiKey = decryptSecret(g.api_key_enc);
+      const apiSecret = decryptSecret(g.api_secret_enc);
+      return {
+        ...g,
+        api_key: apiKey,
+        api_secret: apiSecret,
+      };
+    });
+    const jsonStr = JSON.stringify(backupList, null, 2);
+    try {
+      fs.writeFileSync(path.resolve(defaultDbDir, 'saved_sms_gateways.json'), jsonStr, 'utf-8');
+    } catch {}
+    try {
+      fs.writeFileSync(path.resolve(process.cwd(), 'saved_sms_gateways.json'), jsonStr, 'utf-8');
+    } catch {}
+    try {
+      db.prepare(`
+        INSERT INTO internal_keys (key_name, key_value) VALUES ('saved_sms_gateways', ?)
+        ON CONFLICT(key_name) DO UPDATE SET key_value = excluded.key_value, created_at = datetime('now')
+      `).run(jsonStr);
+    } catch {}
+
+    // Update .env with active/default gateway keys if present
+    const defaultGw = gateways.find((g) => g.is_default && g.active) || gateways[0];
+    if (defaultGw) {
+      const apiKey = decryptSecret(defaultGw.api_key_enc);
+      const updates: Record<string, string> = {};
+      if (apiKey) updates.SMS_GATEWAY_API_KEY = apiKey;
+      if (defaultGw.sender_id) updates.SMS_GATEWAY_SENDER_ID = defaultGw.sender_id;
+      if (Object.keys(updates).length > 0) {
+        updateEnvFile(updates);
+      }
+    }
+  } catch (err) {
+    console.warn('Error saving SMS gateways backup:', (err as Error).message);
+  }
+}
+
+export function initPermanentSmsGateways(): void {
+  try {
+    const existingCount = (db.prepare(`SELECT COUNT(*) as c FROM sms_gateways`).get() as { c: number }).c;
+    let restored = false;
+
+    if (existingCount === 0) {
+      // 1. Check file backup
+      for (const p of [path.resolve(defaultDbDir, 'saved_sms_gateways.json'), path.resolve(process.cwd(), 'saved_sms_gateways.json')]) {
+        if (fs.existsSync(p)) {
+          try {
+            const list = JSON.parse(fs.readFileSync(p, 'utf-8')) as Array<Record<string, unknown>>;
+            if (Array.isArray(list) && list.length > 0) {
+              for (const gw of list) {
+                const apiKey = String(gw.api_key || '');
+                const apiSecret = String(gw.api_secret || '');
+                db.prepare(`
+                  INSERT INTO sms_gateways (
+                    name, provider, base_url, balance_url, http_method, payload_format,
+                    sender_id, api_key_enc, api_secret_enc, key_hint,
+                    to_param, message_param, sender_param, api_key_param,
+                    extra_params_json, custom_headers_json, batch_delay_ms, is_default, active, last_test_status
+                  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE')
+                `).run(
+                  String(gw.name || 'BulkSMSBD Primary'),
+                  String(gw.provider || 'BULKSMSBD'),
+                  String(gw.base_url || 'https://bulksmsbd.net/api/smsapi'),
+                  String(gw.balance_url || 'https://bulksmsbd.net/api/getBalanceApi'),
+                  String(gw.http_method || 'POST'),
+                  String(gw.payload_format || 'FORM'),
+                  String(gw.sender_id || '').trim(),
+                  gw.api_key_enc ? String(gw.api_key_enc) : encryptSecret(apiKey),
+                  gw.api_secret_enc ? String(gw.api_secret_enc) : encryptSecret(apiSecret),
+                  gw.key_hint ? String(gw.key_hint) : maskSecretHint(apiKey),
+                  String(gw.to_param || 'number'),
+                  String(gw.message_param || 'message'),
+                  String(gw.sender_param || 'senderid'),
+                  String(gw.api_key_param || 'api_key'),
+                  String(gw.extra_params_json || '{"type":"text"}'),
+                  String(gw.custom_headers_json || '{}'),
+                  Number(gw.batch_delay_ms || 150),
+                  1,
+                  1
+                );
+              }
+              restored = true;
+              break;
+            }
+          } catch {}
+        }
+      }
+
+      // 2. Check internal_keys
+      if (!restored) {
+        try {
+          const keyRow = db.prepare(`SELECT key_value FROM internal_keys WHERE key_name = 'saved_sms_gateways'`).get() as { key_value: string } | undefined;
+          if (keyRow?.key_value) {
+            const list = JSON.parse(keyRow.key_value) as Array<Record<string, unknown>>;
+            if (Array.isArray(list) && list.length > 0) {
+              for (const gw of list) {
+                const apiKey = String(gw.api_key || '');
+                db.prepare(`
+                  INSERT INTO sms_gateways (
+                    name, provider, base_url, balance_url, http_method, payload_format,
+                    sender_id, api_key_enc, api_secret_enc, key_hint,
+                    to_param, message_param, sender_param, api_key_param,
+                    extra_params_json, custom_headers_json, batch_delay_ms, is_default, active, last_test_status
+                  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE')
+                `).run(
+                  String(gw.name || 'BulkSMSBD Primary'),
+                  String(gw.provider || 'BULKSMSBD'),
+                  String(gw.base_url || 'https://bulksmsbd.net/api/smsapi'),
+                  String(gw.balance_url || 'https://bulksmsbd.net/api/getBalanceApi'),
+                  String(gw.http_method || 'POST'),
+                  String(gw.payload_format || 'FORM'),
+                  String(gw.sender_id || '').trim(),
+                  gw.api_key_enc ? String(gw.api_key_enc) : encryptSecret(apiKey),
+                  gw.api_secret_enc ? String(gw.api_secret_enc) : '',
+                  gw.key_hint ? String(gw.key_hint) : maskSecretHint(apiKey),
+                  String(gw.to_param || 'number'),
+                  String(gw.message_param || 'message'),
+                  String(gw.sender_param || 'senderid'),
+                  String(gw.api_key_param || 'api_key'),
+                  String(gw.extra_params_json || '{"type":"text"}'),
+                  String(gw.custom_headers_json || '{}'),
+                  Number(gw.batch_delay_ms || 150),
+                  1,
+                  1
+                );
+              }
+              restored = true;
+            }
+          }
+        } catch {}
+      }
+
+      // 3. Fallback: seed permanent default BulkSMSBD gateway (active = 1, is_default = 1)
+      if (!restored) {
+        const envApiKey = process.env.SMS_GATEWAY_API_KEY?.trim() || '';
+        const envSenderId = process.env.SMS_GATEWAY_SENDER_ID?.trim() || '';
+        db.prepare(`
+          INSERT INTO sms_gateways (
+            name, provider, base_url, balance_url, http_method, payload_format,
+            sender_id, api_key_enc, api_secret_enc, key_hint,
+            to_param, message_param, sender_param, api_key_param,
+            extra_params_json, custom_headers_json, batch_delay_ms, is_default, active, last_test_status
+          ) VALUES (?, 'BULKSMSBD', 'https://bulksmsbd.net/api/smsapi', 'https://bulksmsbd.net/api/getBalanceApi', 'POST', 'FORM', ?, ?, '', ?, 'number', 'message', 'senderid', 'api_key', '{"type":"text"}', '{}', 150, 1, 1, 'ACTIVE')
+        `).run(
+          'BulkSMSBD Primary',
+          envSenderId,
+          encryptSecret(envApiKey),
+          maskSecretHint(envApiKey)
+        );
+      }
+    }
+
+    // Always ensure at least one gateway is active and default
+    db.exec(`UPDATE sms_gateways SET active = 1 WHERE is_default = 1;`);
+    const activeCount = (db.prepare(`SELECT COUNT(*) as c FROM sms_gateways WHERE active = 1`).get() as { c: number }).c;
+    if (activeCount === 0) {
+      db.exec(`UPDATE sms_gateways SET active = 1, is_default = 1 WHERE id = (SELECT id FROM sms_gateways ORDER BY id ASC LIMIT 1);`);
+    }
+  } catch (err) {
+    console.warn('Error in initPermanentSmsGateways:', (err as Error).message);
+  }
 }
 
 function isPrivateOrReservedIp(ip: string): boolean {

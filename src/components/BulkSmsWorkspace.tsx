@@ -339,10 +339,16 @@ export const BulkSmsWorkspace: React.FC<BulkSmsWorkspaceProps> = ({
     setGwBusy(true);
     setGwBanner(null);
     try {
+      const payload = {
+        ...gwForm,
+        is_default: true,
+        active: true,
+      };
+
       if (editingGwId) {
         await apiFetch(`/api/sms/gateways/${editingGwId}`, {
           method: 'PUT',
-          body: JSON.stringify(gwForm),
+          body: JSON.stringify(payload),
         });
         setGwBanner({
           ok: true,
@@ -351,7 +357,7 @@ export const BulkSmsWorkspace: React.FC<BulkSmsWorkspaceProps> = ({
       } else {
         await apiFetch('/api/sms/gateways', {
           method: 'POST',
-          body: JSON.stringify(gwForm),
+          body: JSON.stringify(payload),
         });
         setGwBanner({
           ok: true,
@@ -361,7 +367,7 @@ export const BulkSmsWorkspace: React.FC<BulkSmsWorkspaceProps> = ({
 
       // Permanently save to localStorage
       try {
-        localStorage.setItem(STORAGE_PERMANENT_GW_KEY, JSON.stringify(gwForm));
+        localStorage.setItem(STORAGE_PERMANENT_GW_KEY, JSON.stringify(payload));
       } catch {
         // ignore
       }
@@ -1028,11 +1034,11 @@ export const BulkSmsWorkspace: React.FC<BulkSmsWorkspaceProps> = ({
                 <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
                 <div>
                   <div className="font-bold text-sm flex items-center gap-2">
-                    <span>{bn ? 'SMS গেটওয়ে স্থায়ীভাবে সংরক্ষিত ও সক্রিয় রয়েছে' : 'SMS Gateway is Permanently Configured & Active'}</span>
-                    <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-200/80 dark:bg-emerald-800 text-emerald-900 dark:text-emerald-100 font-mono">DEFAULT</span>
+                    <span>{bn ? 'SMS গেটওয়ে স্থায়ীভাবে সক্রিয় রয়েছে — সিস্টেম থেকে চালু করার প্রয়োজন নেই' : 'SMS Gateway is Permanently Active — No manual activation needed'}</span>
+                    <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-200/80 dark:bg-emerald-800 text-emerald-900 dark:text-emerald-100 font-mono">ALWAYS ACTIVE</span>
                   </div>
                   <div className="text-[11px] text-emerald-700 dark:text-emerald-300 mt-0.5">
-                    {activeDefaultGw.name} ({activeDefaultGw.provider}) · SID: <span className="font-mono font-semibold">{activeDefaultGw.sender_id || 'N/A'}</span> · API Key: <span className="font-mono">✓ সংরক্ষিত ({activeDefaultGw.key_hint || 'Saved'})</span>
+                    {activeDefaultGw.name} ({activeDefaultGw.provider}) · SID: <span className="font-mono font-semibold">{activeDefaultGw.sender_id || 'N/A'}</span> · API Key: <span className="font-mono">✓ স্থায়ীভাবে সংরক্ষিত ({activeDefaultGw.key_hint || 'Configured'})</span>
                   </div>
                 </div>
               </div>
@@ -1042,7 +1048,7 @@ export const BulkSmsWorkspace: React.FC<BulkSmsWorkspaceProps> = ({
                   onClick={() => startEditGateway(activeDefaultGw)}
                   className="px-3.5 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-semibold text-xs transition-colors"
                 >
-                  {bn ? 'তথ্য পরিবর্তন / এডিট করুন' : 'Edit Gateway Settings'}
+                  {bn ? 'সেন্ডার আইডি বা কী পরিবর্তন করুন' : 'Change Sender ID / Key'}
                 </button>
               </div>
             </div>
@@ -1189,25 +1195,11 @@ export const BulkSmsWorkspace: React.FC<BulkSmsWorkspaceProps> = ({
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-4">
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    disabled={!canManageGateways}
-                    checked={gwForm.is_default}
-                    onChange={(e) => setGwForm({ ...gwForm, is_default: e.target.checked })}
-                  />
-                  <span>{bn ? 'ডিফল্ট গেটওয়ে' : 'Set as Default'}</span>
-                </label>
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    disabled={!canManageGateways}
-                    checked={gwForm.active}
-                    onChange={(e) => setGwForm({ ...gwForm, active: e.target.checked })}
-                  />
-                  <span>{bn ? 'সক্রিয় (Active)' : 'Active'}</span>
-                </label>
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-200 font-semibold border border-emerald-300 dark:border-emerald-800">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  {bn ? 'স্থায়ীভাবে সক্রিয় ও ডিফল্ট গেটওয়ে' : 'Permanently Active & Default Gateway'}
+                </span>
               </div>
               <button
                 type="button"

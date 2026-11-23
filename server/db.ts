@@ -23,6 +23,41 @@ export function closeDatabase() {
   }
 }
 
+export function updateEnvFile(updates: Record<string, string>) {
+  try {
+    const envPath = path.resolve(process.cwd(), '.env');
+    let content = '';
+    if (fs.existsSync(envPath)) {
+      content = fs.readFileSync(envPath, 'utf-8');
+    }
+    const lines = content.split(/\r?\n/);
+    const keysHandled = new Set<string>();
+
+    const newLines = lines.map((line) => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) return line;
+      const eqIdx = line.indexOf('=');
+      if (eqIdx === -1) return line;
+      const key = line.slice(0, eqIdx).trim();
+      if (key in updates) {
+        keysHandled.add(key);
+        return `${key}="${updates[key]}"`;
+      }
+      return line;
+    });
+
+    for (const [k, v] of Object.entries(updates)) {
+      if (!keysHandled.has(k) && v) {
+        newLines.push(`${k}="${v}"`);
+      }
+    }
+
+    fs.writeFileSync(envPath, newLines.join('\n'), 'utf-8');
+  } catch (err) {
+    console.warn('Failed to update .env file:', (err as Error).message);
+  }
+}
+
 export function initDatabase() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -530,6 +565,40 @@ function seedInitialData() {
         String(settingsToRestore.promo_banner_text || ''),
         settingsToRestore.promo_banner_active ? 1 : 0
       );
+    }
+  } catch {
+    // ignore
+  }
+
+  // Restore saved Gemini API Key if previously backed up or in .env
+  try {
+    let geminiKeyToRestore = '';
+    const keyRow = db.prepare(`SELECT key_value FROM internal_keys WHERE key_name = 'gemini_api_key'`).get() as { key_value: string } | undefined;
+    if (keyRow?.key_value?.trim() && keyRow.key_value.trim() !== 'MY_GEMINI_API_KEY') {
+      geminiKeyToRestore = keyRow.key_value.trim();
+    } else {
+      for (const p of [path.resolve(defaultDbDir, 'saved_gemini_key.json'), path.resolve(process.cwd(), 'saved_gemini_key.json')]) {
+        if (fs.existsSync(p)) {
+          const parsed = JSON.parse(fs.readFileSync(p, 'utf-8'));
+          if (parsed?.gemini_api_key?.trim() && parsed.gemini_api_key.trim() !== 'MY_GEMINI_API_KEY') {
+            geminiKeyToRestore = parsed.gemini_api_key.trim();
+            break;
+          }
+        }
+      }
+    }
+    if (!geminiKeyToRestore) {
+      const envKey = process.env.GEMINI_API_KEY?.trim();
+      if (envKey && envKey !== 'MY_GEMINI_API_KEY') {
+        geminiKeyToRestore = envKey;
+      }
+    }
+    if (geminiKeyToRestore) {
+      db.prepare(`
+        INSERT INTO internal_keys (key_name, key_value) VALUES ('gemini_api_key', ?)
+        ON CONFLICT(key_name) DO UPDATE SET key_value = excluded.key_value
+      `).run(geminiKeyToRestore);
+      process.env.GEMINI_API_KEY = geminiKeyToRestore;
     }
   } catch {
     // ignore

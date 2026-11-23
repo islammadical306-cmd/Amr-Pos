@@ -1,5 +1,7 @@
 import { GoogleGenAI, Type } from '@google/genai';
-import { db } from './db.ts';
+import fs from 'node:fs';
+import path from 'node:path';
+import { db, defaultDbDir, updateEnvFile } from './db.ts';
 
 export function getGeminiApiKey(): string {
   let apiKey = process.env.GEMINI_API_KEY?.trim();
@@ -14,12 +16,70 @@ export function getGeminiApiKey(): string {
     }
   }
 
+  // Fallback 1: check saved_gemini_key.json on disk
+  if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
+    for (const p of [path.resolve(defaultDbDir, 'saved_gemini_key.json'), path.resolve(process.cwd(), 'saved_gemini_key.json')]) {
+      if (fs.existsSync(p)) {
+        try {
+          const parsed = JSON.parse(fs.readFileSync(p, 'utf-8'));
+          if (parsed?.gemini_api_key?.trim() && parsed.gemini_api_key.trim() !== 'MY_GEMINI_API_KEY') {
+            apiKey = parsed.gemini_api_key.trim();
+            // Self-heal into memory and database
+            process.env.GEMINI_API_KEY = apiKey;
+            try {
+              db.prepare(`
+                INSERT INTO internal_keys (key_name, key_value) VALUES ('gemini_api_key', ?)
+                ON CONFLICT(key_name) DO UPDATE SET key_value = excluded.key_value
+              `).run(apiKey as string);
+            } catch {}
+            break;
+          }
+        } catch {}
+      }
+    }
+  }
+
   if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
     throw new Error(
       'GEMINI_API_KEY কনফিগার করা হয়নি। (Gemini API Key is not configured). দয়া করে POS সেটিংস (Settings) থেকে অথবা Render ড্যাশবোর্ডের Environment-এ GEMINI_API_KEY যোগ করুন।'
     );
   }
   return apiKey;
+}
+
+export function saveGeminiKeyPermanently(apiKey: string): void {
+  const cleanKey = apiKey.trim();
+  if (!cleanKey) {
+    try {
+      db.prepare(`DELETE FROM internal_keys WHERE key_name = 'gemini_api_key'`).run();
+    } catch {}
+    delete process.env.GEMINI_API_KEY;
+    for (const p of [path.resolve(defaultDbDir, 'saved_gemini_key.json'), path.resolve(process.cwd(), 'saved_gemini_key.json')]) {
+      if (fs.existsSync(p)) {
+        try { fs.unlinkSync(p); } catch {}
+      }
+    }
+    return;
+  }
+
+  process.env.GEMINI_API_KEY = cleanKey;
+
+  try {
+    db.prepare(`
+      INSERT INTO internal_keys (key_name, key_value) VALUES ('gemini_api_key', ?)
+      ON CONFLICT(key_name) DO UPDATE SET key_value = excluded.key_value, created_at = datetime('now')
+    `).run(cleanKey);
+  } catch {}
+
+  const payload = JSON.stringify({ gemini_api_key: cleanKey, saved_at: new Date().toISOString() }, null, 2);
+  try {
+    fs.writeFileSync(path.resolve(defaultDbDir, 'saved_gemini_key.json'), payload, 'utf-8');
+  } catch {}
+  try {
+    fs.writeFileSync(path.resolve(process.cwd(), 'saved_gemini_key.json'), payload, 'utf-8');
+  } catch {}
+
+  updateEnvFile({ GEMINI_API_KEY: cleanKey });
 }
 
 function getGeminiClient(apiKey: string) {
