@@ -625,7 +625,15 @@ export default function App() {
                 onRefresh={refreshData}
               />
             )}
-            {activeTab === 'customers' && <CustomersView lang={lang} customers={customers} onRefresh={refreshData} />}
+            {activeTab === 'customers' && (
+              <CustomersView
+                lang={lang}
+                customers={customers}
+                isOnline={isOnline}
+                settings={settings}
+                onRefresh={refreshData}
+              />
+            )}
             {activeTab === 'dues' && (
               <DuesMessagingView
                 mode="dues"

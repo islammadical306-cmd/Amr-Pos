@@ -1572,11 +1572,30 @@ app.get('/api/customers/:id/ledger', requireAuth, (req: Request, res: Response) 
     .get(id);
   const sales = db
     .prepare(`SELECT id, invoice_no, total, paid_amount, due_amount, payment_method, status, created_at FROM sales WHERE customer_id = ? ORDER BY id DESC`)
-    .all(id);
+    .all(id) as Array<Record<string, unknown>>;
+
+  const saleIds = sales.map((s) => Number(s.id));
+  const itemsBySale: Record<number, Array<Record<string, unknown>>> = {};
+  if (saleIds.length > 0) {
+    const placeholders = saleIds.map(() => '?').join(',');
+    const items = db
+      .prepare(`SELECT sale_id, product_name, quantity, unit_price, line_total FROM sale_items WHERE sale_id IN (${placeholders})`)
+      .all(...saleIds) as Array<Record<string, unknown>>;
+    for (const it of items) {
+      const sid = Number(it.sale_id);
+      if (!itemsBySale[sid]) itemsBySale[sid] = [];
+      itemsBySale[sid].push(it);
+    }
+  }
+
   const payments = db
     .prepare(`SELECT * FROM due_payments WHERE customer_id = ? ORDER BY id DESC`)
     .all(id);
-  res.json({ customer, sales, payments });
+  res.json({
+    customer,
+    sales: sales.map((s) => ({ ...s, items: itemsBySale[Number(s.id)] || [] })),
+    payments,
+  });
 });
 
 app.get('/api/dues/payments', requireAuth, (_req: Request, res: Response) => {

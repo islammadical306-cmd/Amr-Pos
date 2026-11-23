@@ -1,21 +1,31 @@
 import React, { useState } from 'react';
-import { Edit2, FileText, Search, Trash2, UserPlus, X } from 'lucide-react';
+import { Edit2, FileText, History, Search, Trash2, UserPlus, X } from 'lucide-react';
 import { apiFetch } from '../lib/api';
 import { formatBDT, type Lang } from '../i18n';
-import type { Customer } from '../types';
+import type { Customer, ShopSettings } from '../types';
+import { CustomerDueHistoryModal } from '../components/CustomerDueHistoryModal';
 
 interface CustomersViewProps {
   lang: Lang;
   customers: Customer[];
+  isOnline?: boolean;
+  settings?: ShopSettings | null;
   onRefresh: () => Promise<void>;
 }
 
-export const CustomersView: React.FC<CustomersViewProps> = ({ lang, customers, onRefresh }) => {
+export const CustomersView: React.FC<CustomersViewProps> = ({
+  lang,
+  customers,
+  isOnline = true,
+  settings = null,
+  onRefresh,
+}) => {
   const [search, setSearch] = useState('');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
   const [ledger, setLedger] = useState<{ customer: Customer; sales: Array<Record<string, unknown>>; payments: Array<Record<string, unknown>> } | null>(null);
+  const [historyCustomerId, setHistoryCustomerId] = useState<number | null>(null);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [editName, setEditName] = useState('');
   const [editPhone, setEditPhone] = useState('');
@@ -261,6 +271,21 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ lang, customers, o
                     </td>
                     <td className="py-2.5 px-4 text-right">
                       <div className="inline-flex items-center gap-1.5 justify-end">
+                        {/* Due History / বাকি হিস্টোরি Button */}
+                        <button
+                          type="button"
+                          onClick={() => setHistoryCustomerId(c.id)}
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border text-[11px] font-semibold transition-colors ${
+                            c.current_due > 0
+                              ? 'border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 hover:bg-amber-100 shadow-2xs'
+                              : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100'
+                          }`}
+                          title={lang === 'bn' ? 'সকল বাকি হিস্টোরি ও পণ্যের বিস্তারিত দেখুন' : 'Full Due History & Invoices'}
+                        >
+                          <History className="w-3 h-3 text-amber-600" />
+                          <span>{lang === 'bn' ? 'বাকি হিস্টোরি' : 'Due History'}</span>
+                        </button>
+
                         {/* Edit / সংশোধন Button */}
                         <button
                           type="button"
@@ -461,6 +486,17 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ lang, customers, o
             </div>
           </div>
         </div>
+      )}
+      {/* Customer Full Due History Modal */}
+      {historyCustomerId && (
+        <CustomerDueHistoryModal
+          customerId={historyCustomerId}
+          lang={lang}
+          isOnline={isOnline}
+          settings={settings}
+          onClose={() => setHistoryCustomerId(null)}
+          onRefresh={onRefresh}
+        />
       )}
     </div>
   );
