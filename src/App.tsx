@@ -1,8 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   BarChart3,
+  BookOpen,
+  Building2,
   Camera,
   Cloud,
+  Coins,
   Info,
   LayoutDashboard,
   LogOut,
@@ -11,9 +14,12 @@ import {
   Moon,
   Package,
   Printer,
+  Receipt,
   RefreshCw,
+  RotateCcw,
   Settings,
   Shield,
+  ShieldCheck,
   ShoppingBag,
   ShoppingCart,
   Sun,
@@ -44,6 +50,7 @@ import { PurchasesView } from './views/PurchasesView';
 import { CustomersView } from './views/CustomersView';
 import { DuesMessagingView } from './views/DuesMessagingView';
 import { ReportsInvoicesView } from './views/ReportsInvoicesView';
+import { LedgerView } from './views/LedgerView';
 import { EcommerceAdminView, PublicStorefrontView } from './views/EcommerceView';
 import { AdminSyncView } from './views/AdminSyncView';
 import { AboutView } from './views/AboutView';
@@ -51,18 +58,22 @@ import { AboutView } from './views/AboutView';
 type TabId =
   | 'dashboard'
   | 'pos'
-  | 'aiScanner'
-  | 'inventory'
   | 'purchases'
+  | 'invoices'
+  | 'inventory'
+  | 'expenses'
+  | 'ledger'
   | 'customers'
   | 'dues'
-  | 'messaging'
+  | 'suppliers'
+  | 'returns'
   | 'reports'
-  | 'ecommerce'
-  | 'invoices'
-  | 'sync'
   | 'users'
+  | 'messaging'
   | 'settings'
+  | 'aiScanner'
+  | 'ecommerce'
+  | 'sync'
   | 'about';
 
 export default function App() {
@@ -408,19 +419,19 @@ export default function App() {
   const navItems: Array<{ id: TabId; icon: React.FC<{ className?: string }>; perm?: string }> = [
     { id: 'dashboard', icon: LayoutDashboard },
     { id: 'pos', icon: ShoppingCart, perm: 'create_sales' },
-    { id: 'aiScanner', icon: Camera, perm: 'create_sales' },
-    { id: 'inventory', icon: Package },
     { id: 'purchases', icon: Truck, perm: 'manage_purchases' },
+    { id: 'invoices', icon: Receipt },
+    { id: 'inventory', icon: Package },
+    { id: 'expenses', icon: Coins, perm: 'view_profit_reports' },
+    { id: 'ledger', icon: BookOpen },
     { id: 'customers', icon: Users, perm: 'manage_customers' },
     { id: 'dues', icon: Wallet, perm: 'collect_dues' },
-    { id: 'messaging', icon: MessageSquare, perm: 'send_messages' },
+    { id: 'suppliers', icon: Building2, perm: 'manage_purchases' },
+    { id: 'returns', icon: RotateCcw, perm: 'create_sales' },
     { id: 'reports', icon: BarChart3, perm: 'view_profit_reports' },
-    { id: 'ecommerce', icon: ShoppingBag, perm: 'manage_ecommerce' },
-    { id: 'invoices', icon: Printer },
-    { id: 'sync', icon: Cloud },
-    { id: 'users', icon: Shield, perm: 'manage_users' },
+    { id: 'users', icon: ShieldCheck, perm: 'manage_users' },
+    { id: 'messaging', icon: MessageSquare, perm: 'send_messages' },
     { id: 'settings', icon: Settings, perm: 'manage_settings' },
-    { id: 'about', icon: Info },
   ];
 
   const visibleNav = navItems.filter((n) => !n.perm || user.permissions.includes(n.perm));
@@ -461,13 +472,13 @@ export default function App() {
                     setActiveTab(item.id);
                     setMobileMenuOpen(false);
                   }}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors text-left ${
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all text-left ${
                     active
-                      ? 'bg-teal-700 text-white'
-                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                      ? 'bg-teal-700 text-white shadow-sm font-semibold'
+                      : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
                   }`}
                 >
-                  <Icon className="w-4 h-4 shrink-0" />
+                  <Icon className={`w-4 h-4 shrink-0 ${active ? 'text-white' : 'text-slate-500 dark:text-slate-400'}`} />
                   <span className="truncate">{MENU_LABELS[item.id][lang]}</span>
                 </button>
               );
@@ -573,7 +584,42 @@ export default function App() {
             {activeTab === 'inventory' && (
               <InventoryView lang={lang} user={user} products={products} categories={categories} onRefresh={refreshData} />
             )}
-            {activeTab === 'purchases' && <PurchasesView lang={lang} products={products} onRefreshCatalog={refreshData} />}
+            {activeTab === 'purchases' && (
+              <PurchasesView initialTab="purchases" lang={lang} products={products} onRefreshCatalog={refreshData} />
+            )}
+            {activeTab === 'suppliers' && (
+              <PurchasesView initialTab="suppliers" lang={lang} products={products} onRefreshCatalog={refreshData} />
+            )}
+            {activeTab === 'expenses' && (
+              <ReportsInvoicesView
+                mode="expenses"
+                lang={lang}
+                isOnline={isOnline}
+                sales={sales}
+                onRefresh={refreshData}
+                onPrintSale={setPrintSale}
+              />
+            )}
+            {activeTab === 'returns' && (
+              <ReportsInvoicesView
+                mode="returns"
+                lang={lang}
+                isOnline={isOnline}
+                sales={sales}
+                onRefresh={refreshData}
+                onPrintSale={setPrintSale}
+              />
+            )}
+            {activeTab === 'ledger' && (
+              <LedgerView
+                lang={lang}
+                isOnline={isOnline}
+                customers={customers}
+                sales={sales}
+                settings={settings}
+                onRefresh={refreshData}
+              />
+            )}
             {activeTab === 'customers' && <CustomersView lang={lang} customers={customers} onRefresh={refreshData} />}
             {activeTab === 'dues' && (
               <DuesMessagingView

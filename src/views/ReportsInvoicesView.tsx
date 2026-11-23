@@ -17,7 +17,7 @@ import { formatBDT, type Lang } from '../i18n';
 import type { Expense, Sale } from '../types';
 
 interface ReportsInvoicesViewProps {
-  mode: 'reports' | 'invoices';
+  mode: 'reports' | 'invoices' | 'expenses' | 'returns';
   lang: Lang;
   isOnline: boolean;
   sales: Sale[];
@@ -89,7 +89,7 @@ export const ReportsInvoicesView: React.FC<ReportsInvoicesViewProps> = ({
   };
 
   useEffect(() => {
-    if (mode === 'reports') loadReports();
+    if (mode === 'reports' || mode === 'expenses') loadReports();
   }, [mode, from, to, isOnline]);
 
   const handleAddExpense = async (e: React.FormEvent) => {
@@ -258,7 +258,161 @@ export const ReportsInvoicesView: React.FC<ReportsInvoicesViewProps> = ({
       }, 0)
     : 0;
 
-  if (mode === 'invoices') {
+  if (mode === 'expenses') {
+    const totalExp = expenses.reduce((s, ex) => s + Number(ex.amount || 0), 0);
+    return (
+      <div className="space-y-5">
+        {error && (
+          <div className="rounded-xl bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-900 p-3.5 text-xs text-red-700 dark:text-red-300 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="font-display font-bold text-base text-slate-900 dark:text-white">
+                {lang === 'bn' ? 'জমা খরচ এন্ট্রি' : 'Income & Expenses Entry'}
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {lang === 'bn'
+                  ? 'দোকানের দৈনিক পরিচালনা খরচ, দোকান ভাড়া, বিদ্যুৎ বিল, কর্মচারীর বেতন ও অন্যান্য ব্যয় লিপিবদ্ধ করুন।'
+                  : 'Record daily operating expenses, rent, utilities, staff salaries, and misc charges.'}
+              </p>
+            </div>
+            <div className="text-right">
+              <div className="text-[11px] text-slate-500">{lang === 'bn' ? 'মোট খরচ' : 'Total Expenses'}</div>
+              <div className="font-mono font-bold text-lg text-red-600 dark:text-red-400 tabular-nums">
+                {formatBDT(totalExp)}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+          {/* Add Expense Form */}
+          <div className="lg:col-span-5">
+            <form onSubmit={handleAddExpense} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 space-y-4 shadow-sm">
+              <h3 className="font-display font-semibold text-sm text-slate-900 dark:text-white">
+                {lang === 'bn' ? 'নতুন খরচ লিপিবদ্ধ করুন' : 'Record Business Expense'}
+              </h3>
+
+              <div className="space-y-3 text-xs">
+                <div>
+                  <label className="text-slate-600 dark:text-slate-400 block mb-1">
+                    {lang === 'bn' ? 'খরচের বিবরণ / টাইটেল' : 'Expense Title'}
+                  </label>
+                  <input
+                    required
+                    placeholder={lang === 'bn' ? 'যেমন: দোকানের বিদ্যুৎ বিল' : 'e.g., Electricity Bill'}
+                    value={expTitle}
+                    onChange={(e) => setExpTitle(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 focus:ring-2 focus:ring-teal-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-slate-600 dark:text-slate-400 block mb-1">
+                      {lang === 'bn' ? 'খরচের ক্যাটাগরি' : 'Category'}
+                    </label>
+                    <select
+                      value={expCat}
+                      onChange={(e) => setExpCat(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950"
+                    >
+                      <option value="Utilities">{lang === 'bn' ? 'বিদ্যুৎ/পানি বিল' : 'Utilities'}</option>
+                      <option value="Rent">{lang === 'bn' ? 'দোকান ভাড়া' : 'Shop Rent'}</option>
+                      <option value="Salary">{lang === 'bn' ? 'কর্মচারীর বেতন' : 'Salary'}</option>
+                      <option value="Transport">{lang === 'bn' ? 'যাতায়াত / পরিবহন' : 'Transport'}</option>
+                      <option value="Maintenance">{lang === 'bn' ? 'মেরামত / ডেকোরেশন' : 'Maintenance'}</option>
+                      <option value="Tea/Snacks">{lang === 'bn' ? 'আপ্যায়ন / চা-নাস্তা' : 'Tea / Refreshment'}</option>
+                      <option value="General">{lang === 'bn' ? 'অন্যান্য সাধারণ খরচ' : 'General'}</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-slate-600 dark:text-slate-400 block mb-1">
+                      {lang === 'bn' ? 'টাকার পরিমাণ (৳)' : 'Amount (৳)'}
+                    </label>
+                    <input
+                      required
+                      type="number"
+                      min={1}
+                      placeholder="৳ 0.00"
+                      value={expAmount}
+                      onChange={(e) => setExpAmount(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 font-mono font-bold"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-2.5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-xs font-semibold shadow-md transition-colors"
+              >
+                {lang === 'bn' ? 'খরচ সংরক্ষণ করুন' : 'Save Expense'}
+              </button>
+            </form>
+          </div>
+
+          {/* Expenses List */}
+          <div className="lg:col-span-7 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm flex flex-col">
+            <div className="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+              <span className="font-display font-semibold text-xs text-slate-900 dark:text-white">
+                {lang === 'bn' ? 'খরচের তালিকা ও ইতিহাস' : 'Recent Expense Logs'}
+              </span>
+              <span className="text-[11px] font-mono text-slate-500">
+                {expenses.length} {lang === 'bn' ? 'টি এন্ট্রি' : 'items'}
+              </span>
+            </div>
+
+            <div className="overflow-x-auto flex-1">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 dark:bg-slate-950 text-slate-500 border-b border-slate-200 dark:border-slate-800">
+                  <tr>
+                    <th className="py-2.5 px-4">{lang === 'bn' ? 'বিবরণ' : 'Title'}</th>
+                    <th className="py-2.5 px-3">{lang === 'bn' ? 'ক্যাটাগরি' : 'Category'}</th>
+                    <th className="py-2.5 px-3">{lang === 'bn' ? 'তারিখ' : 'Date'}</th>
+                    <th className="py-2.5 px-4 text-right">{lang === 'bn' ? 'পরিমাণ (৳)' : 'Amount (৳)'}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                  {expenses.map((ex) => (
+                    <tr key={ex.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40">
+                      <td className="py-2.5 px-4 font-medium text-slate-900 dark:text-white">{ex.title}</td>
+                      <td className="py-2.5 px-3">
+                        <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[11px]">
+                          {ex.category}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-[11px] font-mono text-slate-400">
+                        {String(ex.created_at).slice(0, 10)}
+                      </td>
+                      <td className="py-2.5 px-4 text-right font-mono font-bold text-red-600 dark:text-red-400 tabular-nums">
+                        {formatBDT(ex.amount)}
+                      </td>
+                    </tr>
+                  ))}
+                  {expenses.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="text-center py-10 text-xs text-slate-400">
+                        {lang === 'bn' ? 'এখনো কোনো খরচ লিপিবদ্ধ করা হয়নি।' : 'No expenses recorded yet.'}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (mode === 'invoices' || mode === 'returns') {
     return (
       <div className="space-y-4">
         {error && (
@@ -273,12 +427,22 @@ export const ReportsInvoicesView: React.FC<ReportsInvoicesViewProps> = ({
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="font-display font-bold text-base text-slate-900 dark:text-white">
-                {lang === 'bn' ? 'ইনভয়েস, প্রিন্টিং ও প্রোডাক্ট রিটার্ন' : 'Invoices, Printing & Sales Returns'}
+                {mode === 'returns'
+                  ? lang === 'bn'
+                    ? 'রিটার্ন ও এডজাস্টমেন্ট'
+                    : 'Sales Product Returns'
+                  : lang === 'bn'
+                  ? 'বিক্রয় তালিকা ও চালান'
+                  : 'Sales Invoices & Receipts'}
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                {lang === 'bn'
-                  ? 'পূর্ববর্তী সকল বিক্রয় রসিদ দেখুন, থার্মাল প্রিন্ট করুন এবং কাস্টমারের বিক্রিত পণ্য রিটার্ন নিন।'
-                  : 'View past sale receipts, thermal print invoices, and process customer product returns.'}
+                {mode === 'returns'
+                  ? lang === 'bn'
+                    ? 'কাস্টমারের ক্রয়কৃত পণ্য ফেরত গ্রহণ করে স্টক বৃদ্ধি এবং রিফান্ড বা বাকি সমন্বয় করুন।'
+                    : 'Process product returns, restore inventory stock, and adjust refunds or dues.'
+                  : lang === 'bn'
+                  ? 'পূর্ববর্তী সকল বিক্রয় রসিদ দেখুন, থার্মাল প্রিন্ট করুন এবং ফিল্টার করুন।'
+                  : 'View past sale receipts, search customer records, and print thermal invoices.'}
               </p>
             </div>
             <div className="text-xs font-mono px-3 py-1 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-600 dark:text-slate-300">

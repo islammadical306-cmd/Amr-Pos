@@ -1322,6 +1322,13 @@ app.post('/api/suppliers/:id/pay', requireAuth, requirePermission('manage_purcha
   res.json({ ok: true });
 });
 
+app.get('/api/suppliers/:id/ledger', requireAuth, (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const supplier = db.prepare(`SELECT * FROM suppliers WHERE id = ?`).get(id);
+  const purchases = db.prepare(`SELECT * FROM purchases WHERE supplier_id = ? ORDER BY id DESC`).all(id);
+  res.json({ supplier, purchases });
+});
+
 app.get('/api/purchases', requireAuth, (_req: Request, res: Response) => {
   const purchases = db
     .prepare(
