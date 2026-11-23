@@ -495,7 +495,7 @@ export function renderSmsTemplate(
     .replace(/\{\{\s*name\s*\}\}/gi, vars.name || 'Customer')
     .replace(/\{\{\s*due\s*\}\}/gi, `৳${dueStr}`)
     .replace(/\{\{\s*phone\s*\}\}/gi, vars.phone || '')
-    .replace(/\{\{\s*shop\s*\}\}/gi, vars.shop || 'AmarCare Pharmacy');
+    .replace(/\{\{\s*shop\s*\}\}/gi, vars.shop || 'ইসলাম মেডিকেল এন্ড ই-সেন্টার');
 }
 
 function safeParseJsonObj(raw: string): Record<string, string> {

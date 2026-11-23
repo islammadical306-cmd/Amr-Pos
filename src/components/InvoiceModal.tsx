@@ -19,7 +19,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({ sale, settings, onCl
       inv: sale.invoice_no,
       total: sale.total,
       date: sale.created_at,
-      shop: settings?.shop_name || 'AmarCare POS',
+      shop: settings?.shop_name || 'ইসলাম মেডিকেল এন্ড ই-সেন্টার',
     });
     QRCode.toDataURL(payload, { width: 120, margin: 1 })
       .then(setQrUrl)
@@ -81,11 +81,11 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({ sale, settings, onCl
                   <img src={settings.logo_url} alt="Shop Logo" className="max-h-12 max-w-[140px] object-contain" />
                 </div>
               )}
-              <div className="font-bold text-base">{settings?.shop_name || 'AmarCare Pharmacy & Retail'}</div>
+              <div className="font-bold text-base">{settings?.shop_name || 'ইসলাম মেডিকেল এন্ড ই-সেন্টার'}</div>
               {settings?.shop_name_bn && <div className="text-xs">{settings.shop_name_bn}</div>}
-              <div className="text-[11px] text-slate-600 mt-1">{settings?.address}</div>
+              <div className="text-[11px] text-slate-600 mt-1">{settings?.address || 'গাজীমাহমুদ, নিশানবাড়িয়া, বরগুনা সদর, বরগুনা'}</div>
               <div className="text-[11px] text-slate-600">
-                Tel: {settings?.phone} {settings?.vat_reg_no ? `· BIN: ${settings.vat_reg_no}` : ''}
+                মোবাইল: {settings?.phone || '01719565306, 01825333334, 01729677646'} {settings?.vat_reg_no ? `· BIN: ${settings.vat_reg_no}` : ''}
               </div>
             </div>
 

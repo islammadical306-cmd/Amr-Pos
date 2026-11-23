@@ -3192,27 +3192,27 @@ app.get('/api/settings', (_req: Request, res: Response) => {
   const row = db.prepare(`SELECT * FROM shop_settings WHERE id = 1`).get();
   res.json(row || {
     id: 1,
-    shop_name: 'AmarPOS Smart AI',
-    shop_name_bn: 'আমার পিওএস স্মার্ট এআই',
+    shop_name: 'ইসলাম মেডিকেল এন্ড ই-সেন্টার',
+    shop_name_bn: 'ইসলাম মেডিকেল এন্ড ই-সেন্টার',
     logo_url: '',
-    address: 'Dhaka, Bangladesh',
-    phone: '',
-    email: '',
+    address: 'গাজীমাহমুদ, নিশানবাড়িয়া, বরগুনা সদর, বরগুনা',
+    phone: '01719565306, 01825333334, 01729677646',
+    email: 'islammedical@gmail.com',
     vat_reg_no: '',
     default_vat_percent: 0,
     currency: 'BDT',
-    receipt_footer: 'ধন্যবাদ! আবার আসবেন / Thank you for shopping with us!',
+    receipt_footer: 'ধন্যবাদ! আবার আসবেন / সুস্থ থাকুন, ভালো থাকুন',
     thermal_width: '80mm',
-    promo_banner_text: '',
-    promo_banner_active: 0,
+    promo_banner_text: 'ইসলাম মেডিকেল এন্ড ই-সেন্টার — আপনার বিশ্বস্ত স্বাস্থ্যসেবা ও ডিজিটাল সেবা কেন্দ্র',
+    promo_banner_active: 1,
   });
 });
 
 app.put('/api/settings', requireAuth, requirePermission('manage_settings'), (req: AuthedRequest, res: Response) => {
   try {
     const s = req.body as Record<string, unknown>;
-    const shop_name = String(s.shop_name || 'AmarPOS Smart AI').trim();
-    const shop_name_bn = String(s.shop_name_bn || '').trim();
+    const shop_name = String(s.shop_name || 'ইসলাম মেডিকেল এন্ড ই-সেন্টার').trim();
+    const shop_name_bn = String(s.shop_name_bn || 'ইসলাম মেডিকেল এন্ড ই-সেন্টার').trim();
     const logo_url = String(s.logo_url || '').trim();
     const address = String(s.address || '').trim();
     const phone = String(s.phone || '').trim();

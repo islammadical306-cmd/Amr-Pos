@@ -96,11 +96,31 @@ export default function App() {
   const [settings, setSettings] = useState<ShopSettings | null>(() => {
     try {
       const saved = localStorage.getItem('amarpos_saved_shop_settings');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.shop_name && parsed.shop_name !== 'AmarCare Pharmacy & Retail') {
+          return parsed;
+        }
+      }
     } catch {
       // ignore
     }
-    return null;
+    return {
+      shop_name: 'ইসলাম মেডিকেল এন্ড ই-সেন্টার',
+      shop_name_bn: 'ইসলাম মেডিকেল এন্ড ই-সেন্টার',
+      address: 'গাজীমাহমুদ, নিশানবাড়িয়া, বরগুনা সদর, বরগুনা',
+      phone: '01719565306, 01825333334, 01729677646',
+      email: 'islammedical@gmail.com',
+      vat_reg_no: '',
+      default_vat_percent: 0,
+      currency: 'BDT',
+      receipt_footer: 'ধন্যবাদ! আবার আসবেন / সুস্থ থাকুন, ভালো থাকুন',
+      thermal_width: '80mm',
+      sms_gateway_url: '',
+      whatsapp_phone_id: '',
+      promo_banner_text: 'ইসলাম মেডিকেল এন্ড ই-সেন্টার — আপনার বিশ্বস্ত স্বাস্থ্যসেবা ও ডিজিটাল সেবা কেন্দ্র',
+      promo_banner_active: 1,
+    };
   });
   const [cart, setCart] = useState<CartItem[]>([]);
   const [printSale, setPrintSale] = useState<Sale | null>(null);
@@ -119,7 +139,7 @@ export default function App() {
         // ignore
       }
     }
-    const title = settings?.shop_name?.trim() || 'AmarPOS Smart AI';
+    const title = settings?.shop_name?.trim() || 'ইসলাম মেডিকেল এন্ড ই-সেন্টার';
     document.title = `${title} · Retail & Pharmacy POS`;
   }, [settings]);
 
@@ -132,7 +152,7 @@ export default function App() {
           if (cachedRaw) {
             try {
               const cached = JSON.parse(cachedRaw) as ShopSettings;
-              if (s.shop_name === 'AmarCare Pharmacy & Retail' && cached.shop_name && cached.shop_name !== 'AmarCare Pharmacy & Retail') {
+              if (cached.shop_name && cached.shop_name !== 'AmarCare Pharmacy & Retail') {
                 setSettings(cached);
                 return;
               }
@@ -458,7 +478,7 @@ export default function App() {
                 <img src={settings.logo_url} alt="Logo" className="w-8 h-8 rounded-lg object-contain bg-slate-50 dark:bg-slate-800 p-0.5 shrink-0" />
               ) : null}
               <div className="font-display font-bold text-base tracking-tight text-slate-900 dark:text-white truncate">
-                {settings?.shop_name || 'AmarPOS Smart AI'}
+                {settings?.shop_name || 'ইসলাম মেডিকেল এন্ড ই-সেন্টার'}
               </div>
             </div>
             <button onClick={() => setMobileMenuOpen(false)} className="lg:hidden p-1 text-slate-500">

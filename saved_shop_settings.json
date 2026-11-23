@@ -1,0 +1,17 @@
+{
+  "id": 1,
+  "shop_name": "ইসলাম মেডিকেল এন্ড ই-সেন্টার",
+  "shop_name_bn": "ইসলাম মেডিকেল এন্ড ই-সেন্টার",
+  "address": "গাজীমাহমুদ, নিশানবাড়িয়া, বরগুনা সদর, বরগুনা",
+  "phone": "01719565306, 01825333334, 01729677646",
+  "email": "islammedical@gmail.com",
+  "vat_reg_no": "BIN-004928172-0101",
+  "default_vat_percent": 5,
+  "currency": "BDT",
+  "receipt_footer": "ধন্যবাদ! আবার আসবেন / সুস্থ থাকুন, ভালো থাকুন",
+  "thermal_width": "80mm",
+  "sms_gateway_url": "",
+  "whatsapp_phone_id": "",
+  "promo_banner_text": "ইসলাম মেডিকেল এন্ড ই-সেন্টার — আপনার বিশ্বস্ত স্বাস্থ্যসেবা ও ডিজিটাল সেবা কেন্দ্র",
+  "promo_banner_active": 1
+}

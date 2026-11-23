@@ -344,7 +344,7 @@ export const PublicStorefrontView: React.FC<{ onBackToPOS: () => void }> = ({ on
           {catalog.settings?.logo_url ? (
             <img src={catalog.settings.logo_url} alt="Logo" className="h-8 w-auto max-w-[120px] object-contain rounded" />
           ) : null}
-          <span>{catalog.settings?.shop_name || 'AmarCare Store'}</span>
+          <span>{catalog.settings?.shop_name || 'ইসলাম মেডিকেল এন্ড ই-সেন্টার'}</span>
         </a>
 
         <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600 dark:text-slate-300">
@@ -398,7 +398,7 @@ export const PublicStorefrontView: React.FC<{ onBackToPOS: () => void }> = ({ on
           <div className="lg:col-span-7 min-h-[260px]">
             <img
               src="/src/assets/images/store_hero_pharmacy_1795333807842.jpg"
-              alt="AmarCare Pharmacy & Retail Storefront"
+              alt="ইসলাম মেডিকেল এন্ড ই-সেন্টার Storefront"
               referrerPolicy="no-referrer"
               className="w-full h-full object-cover"
             />

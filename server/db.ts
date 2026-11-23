@@ -321,20 +321,20 @@ export function initDatabase() {
 
     CREATE TABLE IF NOT EXISTS shop_settings (
       id INTEGER PRIMARY KEY CHECK(id = 1),
-      shop_name TEXT NOT NULL DEFAULT 'AmarCare Pharmacy & Retail',
-      shop_name_bn TEXT NOT NULL DEFAULT 'আমারকেয়ার ফার্মেসি ও রিটেইল',
+      shop_name TEXT NOT NULL DEFAULT 'ইসলাম মেডিকেল এন্ড ই-সেন্টার',
+      shop_name_bn TEXT NOT NULL DEFAULT 'ইসলাম মেডিকেল এন্ড ই-সেন্টার',
       logo_url TEXT DEFAULT '',
-      address TEXT NOT NULL DEFAULT 'House 24, Road 7, Dhanmondi, Dhaka 1205',
-      phone TEXT NOT NULL DEFAULT '+8801711000000',
-      email TEXT NOT NULL DEFAULT 'store@amarcare.com',
-      vat_reg_no TEXT NOT NULL DEFAULT 'BIN-004928172-0101',
-      default_vat_percent REAL NOT NULL DEFAULT 5,
+      address TEXT NOT NULL DEFAULT 'গাজীমাহমুদ, নিশানবাড়িয়া, বরগুনা সদর, বরগুনা',
+      phone TEXT NOT NULL DEFAULT '01719565306, 01825333334, 01729677646',
+      email TEXT NOT NULL DEFAULT 'islammedical@gmail.com',
+      vat_reg_no TEXT NOT NULL DEFAULT '',
+      default_vat_percent REAL NOT NULL DEFAULT 0,
       currency TEXT NOT NULL DEFAULT 'BDT',
-      receipt_footer TEXT NOT NULL DEFAULT 'ধন্যবাদ! আবার আসবেন / Thank you for shopping with us!',
+      receipt_footer TEXT NOT NULL DEFAULT 'ধন্যবাদ! আবার আসবেন / সুস্থ থাকুন, ভালো থাকুন',
       thermal_width TEXT NOT NULL DEFAULT '80mm',
       sms_gateway_url TEXT DEFAULT '',
       whatsapp_phone_id TEXT DEFAULT '',
-      promo_banner_text TEXT NOT NULL DEFAULT '10% OFF Healthcare Essentials with code WELCOME10 · Same-Day Dhaka Delivery',
+      promo_banner_text TEXT NOT NULL DEFAULT 'ইসলাম মেডিকেল এন্ড ই-সেন্টার — আপনার বিশ্বস্ত স্বাস্থ্যসেবা ও ডিজিটাল সেবা কেন্দ্র',
       promo_banner_active INTEGER NOT NULL DEFAULT 1
     );
 
@@ -550,19 +550,19 @@ function seedInitialData() {
           promo_banner_text = excluded.promo_banner_text,
           promo_banner_active = excluded.promo_banner_active
       `).run(
-        String(settingsToRestore.shop_name || 'AmarPOS Smart AI'),
-        String(settingsToRestore.shop_name_bn || ''),
+        String(settingsToRestore.shop_name || 'ইসলাম মেডিকেল এন্ড ই-সেন্টার'),
+        String(settingsToRestore.shop_name_bn || 'ইসলাম মেডিকেল এন্ড ই-সেন্টার'),
         String(settingsToRestore.logo_url || ''),
-        String(settingsToRestore.address || ''),
-        String(settingsToRestore.phone || ''),
-        String(settingsToRestore.email || ''),
+        String(settingsToRestore.address || 'গাজীমাহমুদ, নিশানবাড়িয়া, বরগুনা সদর, বরগুনা'),
+        String(settingsToRestore.phone || '01719565306, 01825333334, 01729677646'),
+        String(settingsToRestore.email || 'islammedical@gmail.com'),
         String(settingsToRestore.vat_reg_no || ''),
         Number(settingsToRestore.default_vat_percent || 0),
-        String(settingsToRestore.receipt_footer || ''),
+        String(settingsToRestore.receipt_footer || 'ধন্যবাদ! আবার আসবেন / সুস্থ থাকুন, ভালো থাকুন'),
         String(settingsToRestore.thermal_width || '80mm'),
         String(settingsToRestore.sms_gateway_url || ''),
         String(settingsToRestore.whatsapp_phone_id || ''),
-        String(settingsToRestore.promo_banner_text || ''),
+        String(settingsToRestore.promo_banner_text || 'ইসলাম মেডিকেল এন্ড ই-সেন্টার — আপনার বিশ্বস্ত স্বাস্থ্যসেবা ও ডিজিটাল সেবা কেন্দ্র'),
         settingsToRestore.promo_banner_active ? 1 : 0
       );
     }

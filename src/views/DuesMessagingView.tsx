@@ -19,16 +19,16 @@ interface DuesMessagingViewProps {
 
 const TEMPLATES = {
   due_reminder: {
-    en: (name: string, due: number) => `Dear ${name}, your current due balance at AmarCare Pharmacy & Retail is ${formatBDT(due)}. Please settle at your convenience. Thank you.`,
-    bn: (name: string, due: number) => `প্রিয় ${name}, আমারকেয়ার ফার্মেসি ও রিটেইলে আপনার বর্তমান বাকি ${formatBDT(due)}। অনুগ্রহ করে সুবিধামতো পরিশোধ করুন। ধন্যবাদ।`,
+    en: (name: string, due: number) => `Dear ${name}, your current due balance at Islam Medical & E-Center is ${formatBDT(due)}. Please settle at your convenience. Thank you.`,
+    bn: (name: string, due: number) => `প্রিয় ${name}, ইসলাম মেডিকেল এন্ড ই-সেন্টারে আপনার বর্তমান বাকি ${formatBDT(due)}। অনুগ্রহ করে সুবিধামতো পরিশোধ করুন। ধন্যবাদ।`,
   },
   payment_confirm: {
-    en: (name: string, amt: number) => `Dear ${name}, we received your payment of ${formatBDT(amt)}. Thank you for shopping with AmarCare!`,
-    bn: (name: string, amt: number) => `প্রিয় ${name}, আপনার ${formatBDT(amt)} পেমেন্ট সফলভাবে গ্রহণ করা হয়েছে। ধন্যবাদ!`,
+    en: (name: string, amt: number) => `Dear ${name}, we received your payment of ${formatBDT(amt)}. Thank you for shopping with Islam Medical & E-Center!`,
+    bn: (name: string, amt: number) => `প্রিয় ${name}, আপনার ${formatBDT(amt)} পেমেন্ট সফলভাবে গ্রহণ করা হয়েছে। ধন্যবাদ! — ইসলাম মেডিকেল এন্ড ই-সেন্টার`,
   },
   promo_offer: {
-    en: (name: string) => `Hi ${name}, enjoy 10% OFF healthcare & daily essentials this week using code WELCOME10 at AmarCare!`,
-    bn: (name: string) => `হ্যালো ${name}, এই সপ্তাহে WELCOME10 কোড ব্যবহার করে সব পণ্যে ১০% ছাড় উপভোগ করুন!`,
+    en: (name: string) => `Hi ${name}, enjoy healthcare & daily essentials at Islam Medical & E-Center!`,
+    bn: (name: string) => `হ্যালো ${name}, ইসলাম মেডিকেল এন্ড ই-সেন্টারে স্বাস্থ্যসেবা ও ঔষধ সামগ্রীতে বিশেষ সুবিধা গ্রহণ করুন!`,
   },
 };
 

@@ -787,7 +787,7 @@ export const AdminSyncView: React.FC<AdminSyncViewProps> = ({
                 required
                 value={shopForm.shop_name}
                 onChange={(e) => setShopForm({ ...shopForm, shop_name: e.target.value })}
-                placeholder="e.g. AmarCare Pharmacy & Retail"
+                placeholder="e.g. ইসলাম মেডিকেল এন্ড ই-সেন্টার"
                 className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2 text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-teal-600"
               />
               <span className="text-[10px] text-teal-700 dark:text-teal-400">
@@ -801,7 +801,7 @@ export const AdminSyncView: React.FC<AdminSyncViewProps> = ({
               <input
                 value={shopForm.shop_name_bn}
                 onChange={(e) => setShopForm({ ...shopForm, shop_name_bn: e.target.value })}
-                placeholder="যেমন: আমারকেয়ার ফার্মেসি ও রিটেইল"
+                placeholder="যেমন: ইসলাম মেডিকেল এন্ড ই-সেন্টার"
                 className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2 text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-teal-600"
               />
             </div>
@@ -823,7 +823,7 @@ export const AdminSyncView: React.FC<AdminSyncViewProps> = ({
               <input
                 value={shopForm.phone}
                 onChange={(e) => setShopForm({ ...shopForm, phone: e.target.value })}
-                placeholder="+8801700000000"
+                placeholder="01719565306, 01825333334, 01729677646"
                 className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-teal-600"
               />
             </div>
@@ -845,7 +845,7 @@ export const AdminSyncView: React.FC<AdminSyncViewProps> = ({
               <input
                 value={shopForm.address}
                 onChange={(e) => setShopForm({ ...shopForm, address: e.target.value })}
-                placeholder="House 24, Road 7, Dhanmondi, Dhaka 1205"
+                placeholder="গাজীমাহমুদ, নিশানবাড়িয়া, বরগুনা সদর, বরগুনা"
                 className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-teal-600"
               />
             </div>

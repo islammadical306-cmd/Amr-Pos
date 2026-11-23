@@ -42,21 +42,21 @@ type SubTab = 'bulk' | 'gateways' | 'single' | 'campaigns';
 const SINGLE_TEMPLATES = {
   due_reminder: {
     en: (name: string, due: number) =>
-      `Dear ${name}, your current due balance at AmarCare Pharmacy & Retail is ${formatBDT(due)}. Please settle at your convenience. Thank you.`,
+      `Dear ${name}, your current due balance at Islam Medical & E-Center is ${formatBDT(due)}. Please settle at your convenience. Thank you.`,
     bn: (name: string, due: number) =>
-      `প্রিয় ${name}, আমারকেয়ার ফার্মেসি ও রিটেইলে আপনার বর্তমান বাকি ${formatBDT(due)}। অনুগ্রহ করে সুবিধামতো পরিশোধ করুন। ধন্যবাদ।`,
+      `প্রিয় ${name}, ইসলাম মেডিকেল এন্ড ই-সেন্টারে আপনার বর্তমান বাকি ${formatBDT(due)}। অনুগ্রহ করে সুবিধামতো পরিশোধ করুন। ধন্যবাদ।`,
   },
   payment_confirm: {
     en: (name: string, amt: number) =>
-      `Dear ${name}, we received your payment of ${formatBDT(amt)}. Thank you for shopping with AmarCare!`,
+      `Dear ${name}, we received your payment of ${formatBDT(amt)}. Thank you for shopping with Islam Medical & E-Center!`,
     bn: (name: string, amt: number) =>
-      `প্রিয় ${name}, আপনার ${formatBDT(amt)} পেমেন্ট সফলভাবে গ্রহণ করা হয়েছে। ধন্যবাদ!`,
+      `প্রিয় ${name}, আপনার ${formatBDT(amt)} পেমেন্ট সফলভাবে গ্রহণ করা হয়েছে। ধন্যবাদ! — ইসলাম মেডিকেল এন্ড ই-সেন্টার`,
   },
   promo_offer: {
     en: (name: string) =>
-      `Hi ${name}, enjoy 10% OFF healthcare & daily essentials this week using code WELCOME10 at AmarCare!`,
+      `Hi ${name}, enjoy healthcare & daily essentials at Islam Medical & E-Center!`,
     bn: (name: string) =>
-      `হ্যালো ${name}, এই সপ্তাহে WELCOME10 কোড ব্যবহার করে সব পণ্যে ১০% ছাড় উপভোগ করুন!`,
+      `হ্যালো ${name}, ইসলাম মেডিকেল এন্ড ই-সেন্টারে স্বাস্থ্যসেবা ও ঔষধ সামগ্রীতে বিশেষ সুবিধা গ্রহণ করুন!`,
   },
 };
 
@@ -648,7 +648,7 @@ export const BulkSmsWorkspace: React.FC<BulkSmsWorkspaceProps> = ({
                 <Users className="w-4 h-4 text-teal-700" />
                 {bn ? 'ধাপ ১ ও ২: প্রাপক এবং বাল্ক SMS কম্পোজার' : 'Step 1 & 2: Audience & Bulk SMS Composer'}
               </h2>
-              <span className="text-[11px] text-slate-500">{settings?.shop_name || 'AmarCare Pharmacy'}</span>
+              <span className="text-[11px] text-slate-500">{settings?.shop_name || 'ইসলাম মেডিকেল এন্ড ই-সেন্টার'}</span>
             </div>
 
             {bulkStatus && (
@@ -1143,7 +1143,7 @@ export const BulkSmsWorkspace: React.FC<BulkSmsWorkspaceProps> = ({
                   disabled={!canManageGateways}
                   value={gwForm.sender_id}
                   onChange={(e) => setGwForm({ ...gwForm, sender_id: e.target.value })}
-                  placeholder="e.g. AMARCARE or 88096..."
+                  placeholder="e.g. ISLAMMED or 88096..."
                   className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2 font-mono"
                 />
               </div>

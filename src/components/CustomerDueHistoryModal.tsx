@@ -239,7 +239,7 @@ export const CustomerDueHistoryModal: React.FC<CustomerDueHistoryModalProps> = (
     }
     setSendingSms(true);
     try {
-      const shopName = settings?.shop_name || 'AmarPOS';
+      const shopName = settings?.shop_name || 'ইসলাম মেডিকেল এন্ড ই-সেন্টার';
       const text =
         lang === 'bn'
           ? `প্রিয় ${data.customer.name}, ${shopName}-এ আপনার বর্তমান বকেয়া বাকি ${formatBDT(due)}। অনুগ্রহ করে সুবিধামতো পরিশোধ করুন। ধন্যবাদ।`
@@ -721,7 +721,7 @@ export const CustomerDueHistoryModal: React.FC<CustomerDueHistoryModalProps> = (
         <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50 flex flex-wrap items-center justify-between gap-3 text-xs">
           <div className="text-slate-500">
             {lang === 'bn' ? 'দোকান:' : 'Store:'}{' '}
-            <strong className="text-slate-800 dark:text-slate-200">{settings?.shop_name || 'AmarPOS'}</strong>
+            <strong className="text-slate-800 dark:text-slate-200">{settings?.shop_name || 'ইসলাম মেডিকেল এন্ড ই-সেন্টার'}</strong>
           </div>
           <div className="flex items-center gap-2">
             {cust && cust.current_due > 0 && onCollectPayment && (
